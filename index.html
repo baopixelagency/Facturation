@@ -16,17 +16,17 @@
 </script>
 <style>
   :root{
-    --violet:#5C2D8C; --violet-d:#43206A; --violet-l:#F0EBF8; --violet-ll:#F8F5FC;
-    --orange:#F47920; --orange-l:#FDF0E4;
+    --violet:#662483; --violet-d:#4C1B62; --violet-l:#F1EAF6; --violet-ll:#F9F5FB;
+    --orange:#F39200; --orange-l:#FDF1E0;
     --noir:#1A1A1A; --gris:#6B6B6B; --gris-l:#9A9AA5;
     --line:#E9E6EF; --bg:#F6F5F9; --card:#FFFFFF; --green:#2E7D32;
     --shadow:0 1px 2px rgba(28,20,50,.04),0 8px 24px rgba(28,20,50,.06);
-    --shadow-lg:0 10px 40px rgba(67,32,106,.14);
+    --shadow-lg:0 10px 40px rgba(76,27,98,.14);
     --t:.22s cubic-bezier(.4,0,.2,1);
   }
   html[data-theme="dark"]{
-    --violet:#9A6FE0; --violet-d:#7A4FC0; --violet-l:#241C38; --violet-ll:#1B1529;
-    --orange:#FF9A4D; --orange-l:#2E2013;
+    --violet:#B478D6; --violet-d:#9557BB; --violet-l:#2A1B33; --violet-ll:#1E1526;
+    --orange:#FFA733; --orange-l:#332411;
     --noir:#F1EEF8; --gris:#B4AEC4; --gris-l:#7A7490;
     --line:#2B2440; --bg:#100D1A; --card:#1B1629; --green:#5FBF6B;
     --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.45);
@@ -52,7 +52,7 @@
     color:#fff;padding:22px 0 20px;position:relative;overflow:hidden;
   }
   header::after{content:"";position:absolute;right:-60px;top:-40px;width:220px;height:220px;
-    background:radial-gradient(circle,rgba(244,121,32,.35),transparent 62%);pointer-events:none}
+    background:radial-gradient(circle,rgba(243,146,0,.35),transparent 62%);pointer-events:none}
   .head-in{display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;z-index:1}
   .brand{display:flex;align-items:center;gap:14px}
   .brand img{height:38px;filter:drop-shadow(0 2px 6px rgba(0,0,0,.2))}
@@ -116,7 +116,7 @@
   .row{display:flex;gap:12px;flex-wrap:wrap}
   .fld{flex:1;min-width:130px}
   .fld label{display:block;font-size:12px;color:var(--gris);font-weight:500;margin-bottom:5px}
-  input[type=text],input[type=number],input[type=tel],input[type=email],input[type=date],input[type=month],select{
+  input[type=text],input[type=number],input[type=tel],input[type=email],input[type=password],input[type=date],input[type=month],select{
     width:100%;border:1.5px solid var(--line);border-radius:10px;padding:9px 11px;font-family:inherit;font-size:14px;
     color:var(--noir);background:var(--card);transition:border-color var(--t),background-color var(--t),color var(--t);font-weight:500}
   input:focus,select:focus{outline:none;border-color:var(--violet);box-shadow:0 0 0 3px rgba(154,111,224,.18)}
@@ -183,7 +183,7 @@
   .doc-toggle button{flex:1;border:none;background:transparent;color:rgba(255,255,255,.75);font-family:'Syne';font-weight:700;font-size:12.5px;
     padding:7px 0;border-radius:7px;cursor:pointer;transition:background-color .16s,color .16s;letter-spacing:.01em}
   .doc-toggle button.on{background:#fff;color:var(--violet-d);box-shadow:0 2px 8px rgba(0,0,0,.18)}
-  .valid-box{display:none;margin-top:12px;background:var(--orange-l);border:1px solid rgba(244,121,32,.28);border-radius:11px;padding:10px 12px}
+  .valid-box{display:none;margin-top:12px;background:var(--orange-l);border:1px solid rgba(243,146,0,.28);border-radius:11px;padding:10px 12px}
   .valid-box.show{display:block}
   .valid-box .lbl{margin:0 0 7px 0}
   .valid-box .until{font-size:11.5px;color:var(--gris);padding-top:2px}
@@ -216,8 +216,8 @@
 
   .btn{width:100%;border:none;border-radius:12px;padding:14px;font-family:'Syne';font-weight:700;font-size:15px;cursor:pointer;
     transition:.16s;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:-.01em}
-  .btn-pdf{background:linear-gradient(120deg,var(--orange),#e0680f);color:#fff;box-shadow:0 6px 18px rgba(244,121,32,.32);margin-top:14px}
-  .btn-pdf:hover{transform:translateY(-1px);box-shadow:0 9px 24px rgba(244,121,32,.4)}
+  .btn-pdf{background:linear-gradient(120deg,var(--orange),#D97E00);color:#fff;box-shadow:0 6px 18px rgba(243,146,0,.32);margin-top:14px}
+  .btn-pdf:hover{transform:translateY(-1px);box-shadow:0 9px 24px rgba(243,146,0,.4)}
   .btn-pdf:active{transform:translateY(0) scale(.98)}
   .btn-pdf.loading{pointer-events:none;opacity:.85}
   .btn-pdf .spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;display:none}
@@ -237,7 +237,7 @@
     color:var(--gris);font-family:'Syne';font-weight:700;font-size:12.5px;padding:11px 8px;border-radius:10px;cursor:pointer;
     transition:background-color .18s,color .18s;position:relative;white-space:nowrap}
   .nav-item:hover{background:var(--violet-ll);color:var(--violet)}
-  .nav-item.active{background:var(--violet);color:#fff;box-shadow:0 3px 10px rgba(92,45,140,.28)}
+  .nav-item.active{background:var(--violet);color:#fff;box-shadow:0 3px 10px rgba(102,36,131,.28)}
   .nav-item .nav-ic{font-size:16px;line-height:1}
   .nav-item .nav-badge{background:var(--orange);color:#fff;font-size:10px;font-weight:700;border-radius:20px;
     padding:0 6px;min-width:16px;height:16px;line-height:16px;text-align:center}
@@ -355,7 +355,7 @@
 
   /* JOURNAL DE TRÉSORERIE */
   .solde-hero{background:linear-gradient(120deg,var(--violet),var(--violet-d));border-radius:16px;padding:22px 24px;
-    margin-bottom:16px;color:#fff;text-align:center;box-shadow:0 10px 30px rgba(92,45,140,.25)}
+    margin-bottom:16px;color:#fff;text-align:center;box-shadow:0 10px 30px rgba(102,36,131,.25)}
   .solde-hero .sh-k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;opacity:.75;font-weight:600}
   .solde-hero .sh-v{font-family:'Syne';font-weight:800;font-size:38px;margin:6px 0 2px;letter-spacing:-.02em}
   .solde-hero .sh-v small{font-size:17px;color:var(--orange);font-weight:700;margin-left:4px}
@@ -386,11 +386,11 @@
   .exp-sum-card{background:var(--violet-ll);border:1px solid var(--violet-l);border-radius:12px;padding:11px 13px}
   .exp-sum-card .kk{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--gris-l);font-weight:600}
   .exp-sum-card .vv{font-family:'Syne';font-weight:700;font-size:16px;color:var(--violet);margin-top:2px}
-  .exp-form{background:var(--orange-l);border:1px dashed rgba(244,121,32,.32);border-radius:13px;padding:14px;margin-bottom:16px}
+  .exp-form{background:var(--orange-l);border:1px dashed rgba(243,146,0,.32);border-radius:13px;padding:14px;margin-bottom:16px}
   .exp-form-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
   .exp-form-grid .fld2{grid-column:span 1}
   @media(max-width:760px){.exp-form-grid{grid-template-columns:1fr 1fr}}
-  .exp-add-btn{margin-top:10px;width:100%;border:none;background:linear-gradient(120deg,var(--orange),#e0680f);color:#fff;
+  .exp-add-btn{margin-top:10px;width:100%;border:none;background:linear-gradient(120deg,var(--orange),#D97E00);color:#fff;
     font-family:'Syne';font-weight:700;font-size:13px;padding:11px;border-radius:10px;cursor:pointer;transition:.15s}
   .exp-add-btn:hover{transform:translateY(-1px)}
   .exp-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
@@ -457,6 +457,12 @@
   .auth-box label:first-of-type{margin-top:0}
   .auth-err{background:#FBE5E5;color:#B33A3A;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:9px;margin-top:12px;display:none}
   .auth-err.show{display:block}
+  .auth-ok{background:#E4F3E5;color:#2E7D32;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:9px;margin-top:12px;display:none}
+  .auth-ok.show{display:block}
+  .auth-forgot{margin-top:10px;text-align:center;font-size:12px}
+  .auth-forgot button{border:none;background:none;color:var(--gris);font-weight:600;cursor:pointer;font-family:inherit;font-size:inherit;text-decoration:underline}
+  .auth-forgot button:hover{color:var(--violet)}
+  #authCode{letter-spacing:.4em;text-align:center;font-weight:700;font-size:18px}
   .auth-toggle{margin-top:16px;text-align:center;font-size:12.5px;color:var(--gris)}
   .auth-toggle button{border:none;background:none;color:var(--violet);font-weight:700;cursor:pointer;font-family:inherit;font-size:inherit;text-decoration:underline}
   .auth-box .btn{margin-top:16px}
@@ -478,15 +484,26 @@
   <div class="auth-box">
     <h2 id="authTitle">Connexion</h2>
     <div class="auth-sub" id="authSub">Accède à ton espace BaoPixel Studio Facturation.</div>
-    <label for="authEmail">Email</label>
-    <input type="email" id="authEmail" placeholder="toi@exemple.com" autocomplete="email">
-    <label for="authPassword">Mot de passe</label>
-    <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+    <div id="authFieldEmail">
+      <label for="authEmail">Email</label>
+      <input type="email" id="authEmail" placeholder="toi@exemple.com" autocomplete="email" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+    </div>
+    <div id="authFieldCode" style="display:none">
+      <label for="authCode">Code reçu par mail</label>
+      <input type="text" id="authCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+    </div>
+    <div id="authFieldPassword">
+      <label for="authPassword" id="authPasswordLabel">Mot de passe</label>
+      <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+    </div>
     <div class="auth-err" id="authErr"></div>
+    <div class="auth-ok" id="authOk"></div>
     <button class="btn btn-pdf" id="authSubmitBtn" onclick="handleAuthSubmit()"><span class="lbl">Se connecter</span></button>
-    <div class="auth-toggle">
+    <div class="auth-forgot" id="authForgot"><button onclick="setAuthMode('reset_request')">Mot de passe oublié ?</button></div>
+    <div class="auth-toggle" id="authToggleRow">
       <span id="authToggleText">Pas encore de compte ?</span> <button onclick="toggleAuthMode()" id="authToggleBtn">Créer un compte</button>
     </div>
+    <div class="auth-forgot" id="authBackRow" style="display:none"><button onclick="setAuthMode('signin')">← Revenir à la connexion</button></div>
   </div>
 </div>
 
@@ -1795,7 +1812,7 @@ function generateRecuPDF(recuRec, factureRec){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   const W=210, M=18;
-  const V=[92,45,140], O=[244,121,32], NR=[26,26,26], GR=[107,107,107], LN=[229,226,239];
+  const V=[102,36,131], O=[243,146,0], NR=[26,26,26], GR=[107,107,107], LN=[229,226,239];
   let y=18;
 
   try{ doc.addImage("data:image/png;base64,"+LOGO_B64,'PNG',M,y,42,10.4); }catch(e){}
@@ -2069,7 +2086,7 @@ function generateRapportPDF(){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   const W=210, M=16;
-  const V=[92,45,140], O=[244,121,32], NR=[26,26,26], GR=[107,107,107], LN=[229,226,239];
+  const V=[102,36,131], O=[243,146,0], NR=[26,26,26], GR=[107,107,107], LN=[229,226,239];
   let y=18;
 
   function ensure(need){ if(y+need>281){ doc.addPage(); y=20; } }
@@ -2409,7 +2426,7 @@ function generatePDF(){
   const {jsPDF}=window.jspdf;
   const doc=new jsPDF({unit:'mm',format:'a4'});
   const W=210, H=297, M=16;
-  const V=[92,45,140], O=[244,121,32], NR=[26,26,26], GR=[107,107,107], LN=[233,230,239];
+  const V=[102,36,131], O=[243,146,0], NR=[26,26,26], GR=[107,107,107], LN=[233,230,239];
   const GREEN=[46,125,50], GREEN_BG=[234,246,234];
   let y=16;
 
@@ -2783,41 +2800,162 @@ window.addEventListener('online', ()=>{ if(syncUserId){ flushPendingQueue(); pul
 window.addEventListener('offline', ()=>setSyncStatus('offline'));
 
 // ---- Authentification ----
+// Quatre modes : connexion, inscription, demande de code de réinitialisation,
+// puis saisie du code + nouveau mot de passe.
 let authMode='signin';
+
+const AUTH_MODES={
+  signin:{
+    title:'Connexion',
+    sub:'Accède à ton espace BaoPixel Studio Facturation.',
+    submit:'Se connecter',
+    fields:{email:true,code:false,password:true},
+    passwordLabel:'Mot de passe',
+    passwordAutocomplete:'current-password',
+    showForgot:true, showToggle:true, showBack:false
+  },
+  signup:{
+    title:'Créer un compte',
+    sub:'Un seul compte suffit : il te connecte sur tous tes appareils.',
+    submit:'Créer mon compte',
+    fields:{email:true,code:false,password:true},
+    passwordLabel:'Mot de passe',
+    passwordAutocomplete:'new-password',
+    showForgot:false, showToggle:true, showBack:false
+  },
+  reset_request:{
+    title:'Mot de passe oublié',
+    sub:'Saisis ton email : tu recevras un code à six chiffres.',
+    submit:'Recevoir le code',
+    fields:{email:true,code:false,password:false},
+    showForgot:false, showToggle:false, showBack:true
+  },
+  reset_verify:{
+    title:'Nouveau mot de passe',
+    sub:'Saisis le code reçu par mail, puis choisis un nouveau mot de passe.',
+    submit:'Définir le mot de passe',
+    fields:{email:false,code:true,password:true},
+    passwordLabel:'Nouveau mot de passe',
+    passwordAutocomplete:'new-password',
+    showForgot:false, showToggle:false, showBack:true
+  }
+};
+
+function setAuthMode(mode){
+  authMode=mode;
+  const cfg=AUTH_MODES[mode];
+  document.getElementById('authTitle').textContent=cfg.title;
+  document.getElementById('authSub').textContent=cfg.sub;
+  document.getElementById('authSubmitBtn').querySelector('.lbl').textContent=cfg.submit;
+
+  document.getElementById('authFieldEmail').style.display=cfg.fields.email?'':'none';
+  document.getElementById('authFieldCode').style.display=cfg.fields.code?'':'none';
+  document.getElementById('authFieldPassword').style.display=cfg.fields.password?'':'none';
+
+  if(cfg.fields.password){
+    document.getElementById('authPasswordLabel').textContent=cfg.passwordLabel;
+    const pwd=document.getElementById('authPassword');
+    pwd.setAttribute('autocomplete',cfg.passwordAutocomplete);
+    pwd.value='';
+  }
+
+  document.getElementById('authForgot').style.display=cfg.showForgot?'':'none';
+  document.getElementById('authToggleRow').style.display=cfg.showToggle?'':'none';
+  document.getElementById('authBackRow').style.display=cfg.showBack?'':'none';
+
+  document.getElementById('authToggleText').textContent = mode==='signin' ? 'Pas encore de compte ?' : 'Déjà un compte ?';
+  document.getElementById('authToggleBtn').textContent = mode==='signin' ? 'Créer un compte' : 'Se connecter';
+
+  clearAuthMsgs();
+}
+
 function toggleAuthMode(){
-  authMode = authMode==='signin' ? 'signup' : 'signin';
-  document.getElementById('authTitle').textContent = authMode==='signin' ? 'Connexion' : 'Créer un compte';
-  document.getElementById('authSub').textContent = authMode==='signin'
-    ? 'Accède à ton espace BaoPixel Studio Facturation.'
-    : 'Un seul compte suffit : il te connecte sur tous tes appareils.';
-  document.getElementById('authSubmitBtn').querySelector('.lbl').textContent = authMode==='signin' ? 'Se connecter' : 'Créer mon compte';
-  document.getElementById('authToggleText').textContent = authMode==='signin' ? 'Pas encore de compte ?' : 'Déjà un compte ?';
-  document.getElementById('authToggleBtn').textContent = authMode==='signin' ? 'Créer un compte' : 'Se connecter';
+  setAuthMode(authMode==='signin' ? 'signup' : 'signin');
+}
+
+function clearAuthMsgs(){
   document.getElementById('authErr').classList.remove('show');
+  document.getElementById('authOk').classList.remove('show');
 }
 function showAuthErr(msg){
   const el=document.getElementById('authErr');
   el.textContent=msg; el.classList.add('show');
+  document.getElementById('authOk').classList.remove('show');
 }
+function showAuthOk(msg){
+  const el=document.getElementById('authOk');
+  el.textContent=msg; el.classList.add('show');
+  document.getElementById('authErr').classList.remove('show');
+}
+/** Email mémorisé entre la demande de code et sa vérification. */
+let resetEmail='';
+
+/** Un mot de passe court est la première cause de compte compromis. */
+function passwordProblem(password){
+  if(password.length<10) return 'Le mot de passe doit faire au moins 10 caractères.';
+  if(!/[a-z]/.test(password)) return 'Ajoute au moins une minuscule.';
+  if(!/[A-Z]/.test(password)) return 'Ajoute au moins une majuscule.';
+  if(!/[0-9]/.test(password)) return 'Ajoute au moins un chiffre.';
+  return null;
+}
+
 async function handleAuthSubmit(){
   if(!sb){ showAuthErr('Configuration Supabase manquante (SUPABASE_URL / SUPABASE_ANON_KEY).'); return; }
+
+  const btn=document.getElementById('authSubmitBtn');
   const email=document.getElementById('authEmail').value.trim();
   const password=document.getElementById('authPassword').value;
-  if(!email || !password){ showAuthErr('Email et mot de passe requis.'); return; }
-  if(password.length<6){ showAuthErr('Le mot de passe doit faire au moins 6 caractères.'); return; }
-  const btn=document.getElementById('authSubmitBtn');
-  btn.classList.add('loading');
-  document.getElementById('authErr').classList.remove('show');
-  try{
+  const code=document.getElementById('authCode').value.trim();
+
+  // Validation par mode, avant tout appel réseau.
+  if(authMode==='reset_request'){
+    if(!email){ showAuthErr('Saisis ton email.'); return; }
+  }else if(authMode==='reset_verify'){
+    if(code.length!==6){ showAuthErr('Le code fait six chiffres.'); return; }
+    const problem=passwordProblem(password);
+    if(problem){ showAuthErr(problem); return; }
+  }else{
+    if(!email || !password){ showAuthErr('Email et mot de passe requis.'); return; }
     if(authMode==='signup'){
+      const problem=passwordProblem(password);
+      if(problem){ showAuthErr(problem); return; }
+    }
+  }
+
+  btn.classList.add('loading');
+  clearAuthMsgs();
+
+  try{
+    if(authMode==='reset_request'){
+      const {error}=await sb.auth.resetPasswordForEmail(email);
+      // Ne jamais révéler si l'adresse existe : ce serait un moyen d'énumérer
+      // les comptes. Le message reste le même dans tous les cas.
+      if(error && !/rate|limit/i.test(error.message)) console.warn(error);
+      if(error && /rate|limit/i.test(error.message)) throw error;
+      resetEmail=email;
+      setAuthMode('reset_verify');
+      showAuthOk('Si un compte existe pour cette adresse, un code vient d\'être envoyé.');
+
+    }else if(authMode==='reset_verify'){
+      const {error:verifyError}=await sb.auth.verifyOtp({email:resetEmail,token:code,type:'recovery'});
+      if(verifyError) throw new Error('Code invalide ou expiré. Redemande un code.');
+
+      const {error:updateError}=await sb.auth.updateUser({password});
+      if(updateError) throw updateError;
+
+      const {data:{user}}=await sb.auth.getUser();
+      if(user) onAuthenticated(user); else setAuthMode('signin');
+
+    }else if(authMode==='signup'){
       const {data,error}=await sb.auth.signUp({email,password});
       if(error) throw error;
       if(!data.session){
-        showAuthErr('Compte créé. Vérifie ta boîte mail pour confirmer, puis connecte-toi.');
-        toggleAuthMode();
+        setAuthMode('signin');
+        showAuthOk('Compte créé. Confirme ton adresse par mail, puis connecte-toi.');
         return;
       }
       onAuthenticated(data.user);
+
     }else{
       const {data,error}=await sb.auth.signInWithPassword({email,password});
       if(error) throw error;
