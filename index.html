@@ -927,6 +927,8 @@
             <div class="row">
               <div class="fld"><input type="tel" id="cTel" placeholder="Téléphone"></div>
             </div>
+            <div class="fld" style="margin-top:8px"><input type="text" id="cAddr" placeholder="Adresse du client (optionnel)"></div>
+            <div class="fld" style="margin-top:8px"><input type="text" id="cNinea" placeholder="NINEA du client — pour un client professionnel"></div>
             <div class="fld" style="margin-top:8px"><input type="text" id="cProj" placeholder="Intitulé projet (optionnel)"></div>
 
             <span class="lbl" id="docDetailsLbl">Détails devis</span>
@@ -935,7 +937,7 @@
               <div class="fld"><input type="date" id="invDate"></div>
             </div>
 
-            <label class="tva-row"><input type="checkbox" id="tvaOn" checked onchange="calc()"> TVA 18 % appliquée <small id="tvaHint">décocher si exonéré</small></label>
+            <label class="tva-row"><input type="checkbox" id="tvaOn" onchange="calc()"> Appliquer la TVA 18 % <small id="tvaHint">non applicable</small></label>
 
             <div class="bonus-toggle" id="issuerToggle" style="display:flex;width:fit-content" onclick="toggleIssuer()">✍️ Émettre au nom d'une autre personne</div>
             <div id="issuerBox" style="display:none">
@@ -1592,12 +1594,8 @@ function refresh(group){
   const sel=state[group];
   map[group].querySelectorAll('.opt').forEach(o=>o.classList.toggle('on',o.dataset.id===sel));
 }
-function uniqueInvoiceId(typeId){
-  const t=Date.now().toString(36).toUpperCase().slice(-5);
-  const r=Math.random().toString(36).slice(2,5).toUpperCase();
-  const prefix = state.docType==='devis' ? 'DEV' : 'FAC';
-  return prefix+'-'+new Date().getFullYear()+'-'+typeId.toUpperCase()+'-'+t+r;
-}
+// numéro du prochain document de ce type (aperçu ; il est réattribué au moment de l'émission)
+function uniqueInvoiceId(){ return nextDocNumber(state.docType); }
 function pickType(id){
   state.type=id;
   const t=TYPES.find(x=>x.id===id);
@@ -1697,11 +1695,13 @@ function convertToFacture(){
 function persistCurrentDoc(p){
   const docs=loadJSON(STORAGE_KEY_DOCS,[]);
   const existing=docs.find(x=>x.invNum===p.invNum);
+  if(existing && existing.docType!=='devis'){ showToast('🔒 '+p.invNum+' est déjà émise : elle ne peut pas être modifiée.'); return; }
   const rec=existing || {id:p.invNum, createdAt:new Date().toISOString(), linkedDevisNum:null, linkedFactureNum:null, montantEncaisse:0};
   rec.invNum=p.invNum; rec.docType=p.docType;
   rec.status = existing ? existing.status : (p.docType==='devis' ? 'envoye' : 'emise');
   if(p.docType==='facture' && rec.montantEncaisse===undefined) rec.montantEncaisse=0;
-  rec.client={name:p.cName, tel:p.cTel, proj:p.cProj};
+  rec.client={name:p.cName, tel:p.cTel, proj:p.cProj, addr:p.cAddr||'', ninea:p.cNinea||''};
+  rec.issueDate=(existing && existing.issueDate) || p.issueDate;
   rec.typeName=p.typeName; rec.gName=p.gName; rec.dName=p.dName; rec.qty=p.qty;
   rec.total=p.total; rec.totalHT=p.totalHT; rec.tva=p.tva||0; rec.tvaRate=p.tvaRate||0; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
   rec.snapshot=p.snapshot;
@@ -1736,8 +1736,9 @@ function persistCurrentDoc(p){
   } else {
     window._editingDocNum=p.invNum;
     window._sourceDocNum=null;
-    window._docMode={title:'✏️ Modification de '+p.invNum,
-      sub:' — enregistré dans le classeur. Regénère le PDF pour le mettre à jour.'};
+    window._docMode = p.docType==='facture'
+      ? {title:'🔒 Facture '+p.invNum+' émise', sub:' — elle n\'est plus modifiable. Pour la corriger : Avoir, puis Dupliquer.'}
+      : {title:'✏️ Modification de '+p.invNum, sub:' — enregistré dans le classeur. Regénère le PDF pour le mettre à jour.'};
     updateEditBanner();
     showToast((p.docType==='devis'?'📝 Devis ':'🧾 Facture ')+p.invNum+' enregistré dans le classeur.');
   }
@@ -1762,6 +1763,8 @@ function statusInfo(rec){
     emise:{cls:'badge-emise',txt:'🧾 Émise'},
     partiel:{cls:'badge-partiel',txt:'🟡 Partiellement payée'},
     payee:{cls:'badge-payee',txt:'💰 Payée'},
+    annulee:{cls:'badge-refuse',txt:'🚫 Annulée (avoir)'},
+    avoir:{cls:'badge-converti',txt:'↩️ Avoir émis'},
   };
   return map[rec.status]||{cls:'badge-envoye',txt:rec.status};
 }
@@ -1779,14 +1782,14 @@ function renderClasseur(){
     <div class="exp-sum-card"><div class="kk">✅ Devis validés</div><div class="vv">${devisValides.length}</div></div>
     <div class="exp-sum-card"><div class="kk">🧾 Factures émises</div><div class="vv">${factures.length}</div></div>
     <div class="exp-sum-card"><div class="kk">💰 Total encaissé</div><div class="vv">${FCFA(encaisse)} F</div></div>
-    <div class="exp-sum-card"><div class="kk">🧾 TVA facturée</div><div class="vv">${FCFA(factures.reduce((s,f)=>s+(f.tva||0),0))} F</div></div>`;
+    <div class="exp-sum-card"><div class="kk">🧾 TVA facturée</div><div class="vv">${FCFA(factures.reduce((s,f)=>s+(f.tva||0),0)-docs.filter(x=>x.docType==='avoir').reduce((s,a)=>s+(a.tva||0),0))} F</div></div>`;
 
   const filter=window._classeurFilter||'all';
   const search=(document.getElementById('classeurSearch').value||'').toLowerCase().trim();
   const filtered=docs.filter(r=>{
     if(filter==='devis' && !(r.docType==='devis' && r.status==='envoye')) return false;
     if(filter==='valide' && r.status!=='valide') return false;
-    if(filter==='facture' && r.docType!=='facture') return false;
+    if(filter==='facture' && r.docType!=='facture' && r.docType!=='avoir') return false;
     if(search){
       const hay=(r.client.name+' '+r.invNum+' '+(r.client.proj||'')).toLowerCase();
       if(!hay.includes(search)) return false;
@@ -1800,8 +1803,16 @@ function renderClasseur(){
   body.innerHTML=filtered.map(r=>{
     const st=statusInfo(r);
     const dateStr=new Date(r.invDate||r.createdAt).toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
-    let actions=`<button class="ra-btn" onclick="editDoc('${r.invNum}')">✏️ Modifier</button>`;
-    actions+=`<button class="ra-btn" onclick="duplicateDoc('${r.invNum}')" title="Créer un nouveau document repris sur celui-ci (facture de solde, extras…)">📄 Dupliquer</button>`;
+    const dupBtn=`<button class="ra-btn" onclick="duplicateDoc('${r.invNum}')" title="Créer un nouveau document repris sur celui-ci (facture corrigée, facture de solde, extras…)">📄 Dupliquer</button>`;
+    let actions='';
+    if(r.docType==='avoir'){
+      actions+=`<button class="ra-btn" onclick="downloadAvoir('${r.invNum}')">⬇️ PDF</button>`;
+    } else if(r.docType==='facture'){
+      actions+=`<button class="ra-btn" onclick="redownloadDoc('${r.invNum}')" title="Retélécharger la facture à l'identique">⬇️ PDF</button>`+dupBtn;
+      if(r.status!=='annulee') actions+=`<button class="ra-btn danger" onclick="createAvoir('${r.invNum}')" title="Annuler cette facture par une facture d'avoir">↩️ Avoir</button>`;
+    } else {
+      actions+=`<button class="ra-btn" onclick="editDoc('${r.invNum}')">✏️ Modifier</button>`+dupBtn;
+    }
     if(r.docType==='devis' && r.status==='envoye'){
       actions+=`<button class="ra-btn" style="background:#E3F5E4;color:#2E7D32" onclick="markStatus('${r.invNum}','valide')">✅ Validé</button>`;
       actions+=`<button class="ra-btn danger" onclick="markStatus('${r.invNum}','refuse')">❌ Refusé</button>`;
@@ -1812,14 +1823,16 @@ function renderClasseur(){
     if(r.docType==='facture' && (r.status==='emise' || r.status==='partiel')){
       actions+=`<button class="ra-btn go" onclick="openRecuModal('${r.invNum}')">🧾 Reçu</button>`;
     }
-    actions+=`<button class="ra-btn danger" onclick="deleteDoc('${r.invNum}')">🗑</button>`;
+    if(canDeleteDoc(r,docs)) actions+=`<button class="ra-btn danger" onclick="deleteDoc('${r.invNum}')">🗑</button>`;
     const linkInfo=(r.linkedDevisNum?`<br><small style="color:var(--gris-l)">← ${r.linkedDevisNum}</small>`:'')+
                     (r.linkedFactureNum?`<br><small style="color:var(--gris-l)">→ ${r.linkedFactureNum}</small>`:'')+
                     (r.linkedFromNum?`<br><small style="color:var(--gris-l)">↩︎ suite de ${r.linkedFromNum}</small>`:'')+
                     ((r.suiteNums&&r.suiteNums.length)?`<br><small style="color:var(--gris-l)">↪︎ ${r.suiteNums.join(', ')}</small>`:'')+
-                    ((r.revision&&r.revision>1)?`<br><small style="color:var(--orange)">rév. ${r.revision}</small>`:'');
+                    (r.avoirForNum?`<br><small style="color:var(--gris-l)">↩︎ annule ${r.avoirForNum}</small>`:'')+
+                    (r.avoirNum?`<br><small style="color:#B33A3A">→ avoir ${r.avoirNum}</small>`:'')+
+                    ((r.revision&&r.revision>1&&r.docType==='devis')?`<br><small style="color:var(--orange)">rév. ${r.revision}</small>`:'');
     return `<tr><td>${dateStr}</td><td><b>${r.invNum}</b>${linkInfo}</td><td>${r.client.name||'—'}</td>`+
-           `<td>${escHtml(r.typeName)}${r.gName?' · '+escHtml(r.gName):''}</td><td><b>${FCFA(montantDu(r))} F</b>${r.tva>0?`<br><small style="color:var(--gris-l)">dont TVA ${FCFA(r.tva)} F</small>`:''}${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
+           `<td>${escHtml(r.typeName)}${r.gName?' · '+escHtml(r.gName):''}</td><td><b>${r.docType==='avoir'?'- ':''}${FCFA(montantDu(r))} F</b>${r.tva>0?`<br><small style="color:var(--gris-l)">dont TVA ${FCFA(r.tva)} F</small>`:''}${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
            `<td><span class="badge ${st.cls}">${st.txt}</span></td>`+
            `<td><div class="row-actions">${actions}</div></td></tr>`;
   }).join('');
@@ -1834,6 +1847,12 @@ function markStatus(invNum,status){
   showToast('Statut mis à jour : '+invNum);
 }
 function deleteDoc(invNum){
+  const allDocs=loadJSON(STORAGE_KEY_DOCS,[]);
+  const target=allDocs.find(x=>x.invNum===invNum);
+  if(target && !canDeleteDoc(target,allDocs)){
+    showToast('🔒 '+invNum+' ne peut pas être supprimée (facture émise, payée ou suivie d\'autres factures). Utilise un avoir.');
+    return;
+  }
   if(!confirm('Supprimer définitivement '+invNum+' du classeur ?')) return;
   let docs=loadJSON(STORAGE_KEY_DOCS,[]);
   docs=docs.filter(x=>x.invNum!==invNum);
@@ -1844,9 +1863,10 @@ function deleteDoc(invNum){
 // ==================== REÇUS DE PAIEMENT ====================
 const STORAGE_KEY_RECUS='bp_recus_v1';
 function uniqueReceiptId(){
-  const t=Date.now().toString(36).toUpperCase().slice(-5);
-  const r=Math.random().toString(36).slice(2,5).toUpperCase();
-  return 'REC-'+new Date().getFullYear()+'-'+t+r;
+  const year=String(new Date().getFullYear());
+  const re=/^REC-(\d{4})-(\d{4,})$/;
+  const max=loadJSON(STORAGE_KEY_RECUS,[]).reduce((m,x)=>{ const k=re.exec(x.recuNum||''); return (k&&k[1]===year)?Math.max(m,+k[2]):m; },0);
+  return 'REC-'+year+'-'+String(max+1).padStart(4,'0');
 }
 function closeModal(){
   document.getElementById('modalBackdrop').classList.remove('show');
@@ -1976,7 +1996,8 @@ function generateRecuPDF(recuRec, factureRec){
   doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(...O);
   doc.text(FCFA(recuRec.montant)+' FCFA',W-M-10,y+18,{align:'right'});
   doc.setTextColor(255,255,255);doc.setFontSize(9);doc.setFont('helvetica','normal');
-  doc.text('en toutes lettres : voir note ci-dessous',M+10,y+18);
+  doc.setFontSize(8);
+  doc.splitTextToSize(montantEnLettres(recuRec.montant),100).slice(0,2).forEach((l,i)=>doc.text(l,M+10,y+16+i*4));
   y+=34;
 
   // récap
@@ -2023,8 +2044,9 @@ function generateRecuPDF(recuRec, factureRec){
   // footer
   doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,278,W-M,278);
   doc.setFontSize(7.5);doc.setTextColor(...GR);
-  doc.text('BaoPixel Digital Agency  •  hello@baopixel.com  •  +221 76 160 95 85',W/2,283,{align:'center'});
-  doc.text('N.I.N.E.A : 0103191193',W/2,288,{align:'center'});
+  doc.setFontSize(7.2);
+  doc.text(companyFooterLines()[0],W/2,283,{align:'center'});
+  doc.text(companyFooterLines()[1],W/2,288,{align:'center'});
 
   const safeName=(recuRec.client.name||'Client').replace(/[^a-zA-Z0-9]/g,'_');
   doc.save('Recu_BaoPixel_'+safeName+'_'+recuRec.recuNum+'.pdf');
@@ -2244,7 +2266,7 @@ function generateRapportPDF(){
   doc.text('BaoPixel Digital Agency',M,y+6);
   doc.setFont('helvetica','normal');doc.setFontSize(8.3);doc.setTextColor(80,80,80);
   doc.text('Entreprise Individuelle — Tanor Fall',M,y+10.5);
-  doc.text('Mbour / Saly, Petite-Côte, Sénégal',M,y+14.5);
+  doc.text(COMPANY.address,M,y+14.5);
   doc.text('NINEA : 0103191193',M,y+18.5);
   doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...NR);
   doc.text(periodLabel,col2X,y+6);
@@ -2458,8 +2480,8 @@ function calcTail(base){
   const total=totalHT+tva;                 // montant TTC réclamé au client
   document.getElementById('brk').insertAdjacentHTML('beforeend',
     li('Total HT', FCFA(totalHT)+' F', false, null, 'step') +
-    (tvaOn ? li('TVA 18 %', '+'+FCFA(tva)+' F') : li('TVA', 'exonéré', false, null, 'mut')));
-  document.getElementById('tvaHint').textContent = tvaOn ? '+'+FCFA(tva)+' F' : 'document exonéré';
+    (tvaOn ? li('TVA 18 %', '+'+FCFA(tva)+' F') : li('TVA', 'non applicable', false, null, 'mut')));
+  document.getElementById('tvaHint').textContent = tvaOn ? '+'+FCFA(tva)+' F' : 'non applicable';
   const customLabelLive = (t.id==='custom') ? (document.getElementById('customLabel').value||'').trim() : '';
   document.getElementById('tName').textContent = customLabelLive || t.name;
   const totEl=document.getElementById('tot');
@@ -2585,9 +2607,251 @@ function calcLibre(){
     baseUnit:0, subtotal, addSum:0, total:subtotal, unitsFactor:1, lines:lines.map(l=>({...l}))});
 }
 
+// ---- Identité légale de l'émetteur (mentions obligatoires sur les documents) ----
+const COMPANY={
+  name:'BaoPixel Digital Agency',
+  legalForm:'Entreprise Individuelle',
+  city:'Mbour',
+  address:'Mbour, Sénégal',
+  phone:'+221 76 160 95 85',
+  email:'hello@baopixel.com',
+  ninea:'0103191193',
+  rccm:'',   // à compléter : numéro RCCM
+  bank:'',   // à compléter : banque, RIB / IBAN, code SWIFT
+};
+function companyIdLine(){ return 'NINEA : '+COMPANY.ninea+(COMPANY.rccm?'  ·  RCCM : '+COMPANY.rccm:''); }
+function companyLines(iss){
+  return [COMPANY.legalForm, iss.name+(iss.role?' — '+iss.role:''), COMPANY.address, COMPANY.phone, COMPANY.email, companyIdLine()];
+}
+function companyFooterLines(){
+  return [COMPANY.name+' — '+COMPANY.legalForm+'  •  '+COMPANY.address+'  •  '+COMPANY.email+'  •  '+COMPANY.phone,
+          'N.I.N.E.A : '+COMPANY.ninea+(COMPANY.rccm?'  •  RCCM : '+COMPANY.rccm:'')];
+}
+
+// ---- Numérotation continue et chronologique : FAC-2026-0001, DEV-2026-0001, AV-2026-0001 ----
+const NUM_PREFIX={devis:'DEV', facture:'FAC', avoir:'AV'};
+const SEQ_RE=/^(DEV|FAC|AV)-(\d{4})-(\d{4,})$/;
+function nextDocNumber(docType){
+  const prefix=NUM_PREFIX[docType]||'FAC';
+  const year=String(new Date().getFullYear());
+  const max=loadJSON(STORAGE_KEY_DOCS,[]).reduce((m,x)=>{
+    const k=SEQ_RE.exec(x.invNum||'');
+    return (k && k[1]===prefix && k[2]===year) ? Math.max(m,+k[3]) : m;
+  },0);
+  return prefix+'-'+year+'-'+String(max+1).padStart(4,'0');
+}
+
+// ---- Montant en toutes lettres (français) ----
+function nombreEnLettres(nb){
+  nb=Math.round(Math.abs(nb));
+  if(nb===0) return 'zéro';
+  const u=['','un','deux','trois','quatre','cinq','six','sept','huit','neuf','dix','onze','douze','treize','quatorze','quinze','seize','dix-sept','dix-huit','dix-neuf'];
+  const t=['','','vingt','trente','quarante','cinquante','soixante','soixante','quatre-vingt','quatre-vingt'];
+  const sous100=x=>{
+    if(x<20) return u[x];
+    const dz=Math.floor(x/10), r=x%10;
+    if(dz===7||dz===9) return t[dz]+(dz===7&&r===1?' et ':'-')+u[10+r];
+    if(r===0) return dz===8 ? 'quatre-vingts' : t[dz];
+    if(r===1 && dz!==8) return t[dz]+' et un';
+    return t[dz]+'-'+u[r];
+  };
+  const sous1000=x=>{
+    const c=Math.floor(x/100), r=x%100;
+    let out='';
+    if(c>0) out = c===1 ? 'cent' : u[c]+' cent'+(r===0?'s':'');
+    if(r>0) out += (out?' ':'')+sous100(r);
+    return out;
+  };
+  const mrd=Math.floor(nb/1e9), mio=Math.floor(nb/1e6)%1000, mil=Math.floor(nb/1000)%1000, reste=nb%1000;
+  const parts=[];
+  if(mrd) parts.push(sous1000(mrd)+' milliard'+(mrd>1?'s':''));
+  if(mio) parts.push(sous1000(mio)+' million'+(mio>1?'s':''));
+  if(mil) parts.push(mil===1 ? 'mille' : sous1000(mil).replace(/s$/,'')+' mille');
+  if(reste) parts.push(sous1000(reste));
+  return parts.join(' ');
+}
+function montantEnLettres(nb){
+  const v=Math.round(Math.abs(nb));
+  // « deux millions de francs », mais « un million mille francs »
+  const txt=nombreEnLettres(v)+((v>=1e6 && v%1e6===0)?' de':'')+' franc'+(v>1?'s':'')+' CFA';
+  return txt.charAt(0).toUpperCase()+txt.slice(1);
+}
+
+// ---- Factures émises : non modifiables, suppression limitée, correction par avoir ----
+function canDeleteDoc(r,docs){
+  if(r.docType==='devis') return true;
+  if(r.docType==='avoir') return false;
+  if((r.montantEncaisse||0)>0 || r.avoirNum) return false;
+  const m=SEQ_RE.exec(r.invNum||'');
+  if(!m) return true; // ancienne numérotation, antérieure à la numérotation continue
+  // seule la dernière facture de la série peut être supprimée, pour ne pas créer de trou
+  return !docs.some(x=>{ const k=SEQ_RE.exec(x.invNum||''); return k && k[1]===m[1] && k[2]===m[2] && +k[3]>+m[3]; });
+}
+function redownloadDoc(invNum){
+  editDoc(invNum);
+  generatePDF();
+}
+function createAvoir(invNum){
+  const docs=loadJSON(STORAGE_KEY_DOCS,[]);
+  const fac=docs.find(x=>x.invNum===invNum);
+  if(!fac || fac.docType!=='facture') return;
+  if(fac.status==='annulee'){ showToast('Cette facture est déjà annulée par un avoir.'); return; }
+  const motif=prompt('Facture d\'avoir sur '+invNum+'\nElle annule entièrement cette facture. Motif :','Erreur sur la facture');
+  if(motif===null) return;
+  if((fac.montantEncaisse||0)>0 &&
+     !confirm(invNum+' a déjà reçu '+FCFA(fac.montantEncaisse)+' F de paiement.\nL\'avoir annule la facture ; le remboursement ou la reprise de ce montant sur une nouvelle facture est à gérer à part. Continuer ?')) return;
+  const num=nextDocNumber('avoir');
+  const todayISO=new Date().toISOString().slice(0,10);
+  const av={id:num, invNum:num, docType:'avoir', status:'avoir', createdAt:new Date().toISOString(),
+    issueDate:todayISO, invDate:todayISO, client:{...fac.client},
+    typeName:'Avoir sur '+fac.invNum, gName:'', dName:'', qty:1,
+    totalHT:(fac.totalHT!==undefined && fac.totalHT!==null) ? fac.totalHT : fac.total,
+    tva:fac.tva||0, tvaRate:fac.tvaRate||0, total:fac.total, montantEncaisse:0,
+    avoirForNum:fac.invNum, motif:(motif||'').trim(), issuer:fac.issuer||null};
+  fac.status='annulee';
+  fac.avoirNum=num;
+  docs.push(av);
+  saveJSON(STORAGE_KEY_DOCS,docs);
+  renderClasseur();
+  generateAvoirPDF(av,fac);
+  showToast('↩️ Avoir '+num+' émis — '+invNum+' est annulée. Duplique-la pour émettre la facture corrigée.');
+}
+function downloadAvoir(num){
+  const docs=loadJSON(STORAGE_KEY_DOCS,[]);
+  const av=docs.find(x=>x.invNum===num);
+  if(!av) return;
+  generateAvoirPDF(av, docs.find(x=>x.invNum===av.avoirForNum)||{invNum:av.avoirForNum,typeName:'',montantEncaisse:0});
+}
+function generateAvoirPDF(av, fac){
+  const {jsPDF}=window.jspdf;
+  const doc=new jsPDF({unit:'mm',format:'a4'});
+  const W=210, M=16;
+  const V=[102,36,131], O=[243,146,0], NR=[26,26,26], GR=[107,107,107], LN=[233,230,239], RED=[179,58,58];
+  const fr=iso=>{ if(!iso) return '—'; const [Y,Mo,Da]=iso.slice(0,10).split('-').map(Number); return new Date(Y,Mo-1,Da).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}); };
+  const iss=av.issuer||DEFAULT_ISSUER;
+  const clean=x=>stripEmoji(String(x||''));
+  let y=15;
+
+  try{ doc.addImage('data:image/png;base64,'+LOGO_B64,'PNG',M,y,42,10.4,'logo'); }catch(e){}
+  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
+  doc.text('Agence créative digitale',M,y+14.6);
+  doc.setTextColor(...V);doc.setFont('helvetica','bold');doc.setFontSize(20);
+  doc.text("FACTURE D'AVOIR",W-M,y+8,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(...GR);
+  doc.text('N° '+av.invNum,W-M,y+13.5,{align:'right'});
+  y+=20.5; doc.setDrawColor(...LN);doc.setLineWidth(.4);doc.line(M,y,W-M,y); y+=6.5;
+
+  const col2X=M+68, col3X=M+124, LH=3.9, blockH=31;
+  doc.setDrawColor(...O);doc.setLineWidth(.6);
+  doc.line(col2X-6,y-1,col2X-6,y-1+blockH); doc.line(col3X-6,y-1,col3X-6,y-1+blockH);
+  doc.setFontSize(7.3);doc.setTextColor(...GR);doc.setFont('helvetica','bold');
+  doc.text('PRESTATAIRE',M,y); doc.text('CLIENT',col2X,y); doc.text("N° AVOIR",col3X,y);
+  doc.setFontSize(9);doc.setTextColor(...NR);
+  doc.text(COMPANY.name,M,y+4.8);
+  doc.setFont('helvetica','normal');doc.setFontSize(8.1);doc.setTextColor(80,80,80);
+  companyLines(iss).forEach((l,i)=>doc.text(doc.splitTextToSize(clean(l),62)[0],M,y+4.8+LH*(i+1)));
+
+  doc.setFontSize(9);doc.setTextColor(...NR);doc.setFont('helvetica','bold');
+  const nameL=doc.splitTextToSize(clean(av.client.name||'—'),52).slice(0,2);
+  nameL.forEach((l,i)=>doc.text(l,col2X,y+4.8+i*LH));
+  doc.setFont('helvetica','normal');doc.setFontSize(8.1);doc.setTextColor(80,80,80);
+  const cl=[];
+  if(av.client.addr) cl.push(...doc.splitTextToSize(clean(av.client.addr),52).slice(0,2));
+  if(av.client.ninea) cl.push('NINEA : '+clean(av.client.ninea));
+  if(av.client.tel) cl.push(clean(av.client.tel));
+  cl.slice(0,7-nameL.length).forEach((l,i)=>doc.text(l,col2X,y+4.8+(nameL.length+i)*LH));
+
+  doc.setFontSize(8.3);doc.setTextColor(...NR);doc.setFont('helvetica','bold');
+  doc.text(av.invNum,col3X,y+3.8);
+  let cy=y+8;
+  [["DATE D'ÉMISSION",fr(av.issueDate)],["FACTURE D'ORIGINE",fac.invNum||av.avoirForNum],
+   ['DATE DE LA FACTURE',fr(fac.issueDate||(fac.createdAt||'').slice(0,10))]].forEach(([k,v])=>{
+    doc.setFontSize(7.3);doc.setTextColor(...GR);doc.setFont('helvetica','bold'); doc.text(k,col3X,cy);
+    doc.setFontSize(8.3);doc.setTextColor(...NR);doc.setFont('helvetica','normal'); doc.text(String(v),col3X,cy+3.9);
+    cy+=8;
+  });
+  y+=blockH+5;
+
+  // objet
+  const objL=doc.splitTextToSize('Annulation intégrale de la facture N° '+(fac.invNum||av.avoirForNum)+(av.motif?' — Motif : '+clean(av.motif):''),W-2*M-38);
+  const objH=Math.max(9,3+objL.length*4.1);
+  doc.setFillColor(240,235,248);doc.rect(M,y,W-2*M,objH,'F');
+  doc.setFillColor(...O);doc.rect(M,y,1.4,objH,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...V); doc.text('OBJET',M+6,y+objH/2+1);
+  doc.setFont('helvetica','normal');doc.setFontSize(8.7);doc.setTextColor(...NR);
+  objL.forEach((l,i)=>doc.text(l,M+34,y+5.6+i*4.1));
+  y+=objH+7;
+
+  // tableau
+  doc.setFillColor(...V);doc.rect(M,y,W-2*M,8,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(8.5);
+  doc.text('DESCRIPTION',M+3,y+5.4); doc.text('MONTANT HT',W-M-3,y+5.4,{align:'right'});
+  y+=8;
+  const dl=doc.splitTextToSize('Annulation — facture N° '+(fac.invNum||av.avoirForNum)+(fac.typeName?' ('+clean(fac.typeName)+')':''),130);
+  doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...NR);
+  dl.forEach((l,i)=>doc.text(l,M+3,y+5.5+i*4));
+  doc.setFont('helvetica','bold');doc.setTextColor(...RED);
+  doc.text('- '+FCFA(av.totalHT)+' F',W-M-3,y+5.5,{align:'right'});
+  const rH=7.5+(dl.length-1)*4;
+  doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,y+rH,W-M,y+rH);
+  y+=rH+6;
+
+  const row=(label,val,color)=>{
+    doc.setFillColor(247,246,250);doc.rect(M,y-4.6,W-2*M,6.7,'F');
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(...GR); doc.text(label,M+3,y);
+    doc.setFont('helvetica','bold');doc.setTextColor(...(color||NR)); doc.text(val,W-M-3,y,{align:'right'});
+    y+=6.7;
+  };
+  row('Total HT','- '+FCFA(av.totalHT)+' FCFA');
+  if(av.tva>0) row('TVA ('+Math.round((av.tvaRate||0)*100)+'%)','- '+FCFA(av.tva)+' FCFA');
+  else row('TVA','Non applicable',GR);
+  y+=2;
+  doc.setFillColor(...V);doc.rect(M,y-2,W-2*M,10.5,'F');
+  doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
+  doc.text("TOTAL DE L'AVOIR TTC",M+4,y+5);
+  doc.setTextColor(...O);doc.setFontSize(15);
+  doc.text('- '+FCFA(av.total)+' FCFA',W-M-4,y+5.4,{align:'right'});
+  y+=16;
+
+  doc.setFont('helvetica','bold');doc.setFontSize(8.6);doc.setTextColor(...NR);
+  doc.splitTextToSize('Arrêté le présent avoir à la somme de : '+montantEnLettres(av.total)+' ('+FCFA(av.total)+' FCFA).',W-2*M)
+    .forEach(l=>{ doc.text(l,M,y); y+=4.4; });
+  y+=2;
+  if((fac.montantEncaisse||0)>0){
+    doc.setFont('helvetica','italic');doc.setFontSize(8.2);doc.setTextColor(...GR);
+    doc.splitTextToSize('La facture d\'origine avait reçu '+FCFA(fac.montantEncaisse)+' FCFA de paiement. Ce montant fera l\'objet d\'un remboursement ou sera repris sur la facture corrigée.',W-2*M)
+      .forEach(l=>{ doc.text(l,M,y); y+=4.2; });
+  }
+  y+=6;
+
+  // signature
+  doc.setTextColor(...V);doc.setFont('helvetica','bold');doc.setFontSize(9.5);
+  doc.text('SIGNATURE',M,y);
+  doc.setDrawColor(...O);doc.setLineWidth(.5);doc.line(M,y+2,W-M,y+2);
+  y+=8;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.4);doc.setTextColor(...GR);
+  doc.text('Fait à '+COMPANY.city+', le '+fr(av.issueDate),M,y);
+  y+=6;
+  const boxW=(W-2*M-8)/2;
+  doc.setDrawColor(...LN);doc.setLineWidth(.35);doc.rect(M,y,boxW,30);
+  doc.setFont('helvetica','bold');doc.setFontSize(8.6);doc.setTextColor(...V); doc.text('POUR BAOPIXEL',M+3,y+5);
+  doc.setFont('helvetica','normal');doc.setFontSize(8.2);doc.setTextColor(...NR);
+  doc.text(doc.splitTextToSize('Nom : '+clean(iss.name),boxW-32)[0],M+3,y+10.5);
+  if(iss.role){ doc.setFontSize(7.4);doc.setTextColor(...GR); doc.text(doc.splitTextToSize(clean(iss.role),boxW-32)[0],M+3,y+14.6); }
+  try{ doc.addImage('data:image/png;base64,'+TAMPON_B64,'PNG',M+boxW-27,y+3.5,24,24,'cachet'); }catch(e){}
+
+  // footer
+  doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,279,W-M,279);
+  doc.setFontSize(7.3);doc.setTextColor(...GR);
+  const fl=companyFooterLines();
+  doc.text(fl[0],W/2,283.5,{align:'center'}); doc.text(fl[1],W/2,287.5,{align:'center'});
+
+  doc.save('Avoir_BaoPixel_'+(av.client.name||'Client').replace(/[^a-zA-Z0-9]/g,'_')+'_'+av.invNum+'.pdf');
+}
+
 // ---- TVA (Sénégal : 18 %), les montants saisis sont HT ----
 const TVA_RATE=0.18;
-function isTvaOn(){ const el=document.getElementById('tvaOn'); return !el || el.checked; }
+function isTvaOn(){ const el=document.getElementById('tvaOn'); return !!el && el.checked; }
 function setTva(on){ const el=document.getElementById('tvaOn'); if(el) el.checked=!!on; calc(); }
 
 // ---- Signataire du document (par défaut Tanor Fall) ----
@@ -2743,7 +3007,7 @@ function exitEditMode(silent){
   window._sourceDocNum=null;
   updateEditBanner();
   regenNumber();
-  setTva(true);
+  setTva(false);
   if(!silent) showToast('🆕 Nouveau document — numérotation repartie à neuf.');
 }
 function applyDocToForm(rec){
@@ -2752,6 +3016,8 @@ function applyDocToForm(rec){
   document.getElementById('cName').value=rec.client.name||'';
   document.getElementById('cTel').value=rec.client.tel||'';
   document.getElementById('cProj').value=rec.client.proj||'';
+  document.getElementById('cAddr').value=rec.client.addr||'';
+  document.getElementById('cNinea').value=rec.client.ninea||'';
   if(rec.validDays) document.getElementById('validDays').value=rec.validDays;
   setDocType(rec.docType);
 }
@@ -2764,19 +3030,20 @@ function editDoc(invNum){
   window._invTouched=true;
   document.getElementById('invNum').value=rec.invNum;
   document.getElementById('invDate').value=rec.invDate||'';
-  window._docMode={title:'✏️ Modification de '+invNum,
-    sub:' — le document existant sera mis à jour (même numéro, statut et paiements conservés).'};
+  const locked = rec.docType==='facture';
+  window._docMode = locked
+    ? {title:'🔒 Facture '+invNum+' émise', sub:' — non modifiable. « Générer » retélécharge le PDF à l\'identique. Pour la corriger : Avoir, puis Dupliquer.'}
+    : {title:'✏️ Modification de '+invNum, sub:' — le devis existant sera mis à jour (même numéro).'};
   updateEditBanner();
   switchPage('calc');
   calc();
-  showToast('✏️ '+invNum+' ouvert en modification — regénère le PDF pour enregistrer.');
+  showToast(locked ? '🔒 '+invNum+' ouverte en lecture' : '✏️ '+invNum+' ouvert en modification — regénère le PDF pour enregistrer.');
 }
 function duplicateDoc(invNum){
   const docs=loadJSON(STORAGE_KEY_DOCS,[]);
   const rec=docs.find(x=>x.invNum===invNum);
   if(!rec) return;
   applyDocToForm(rec);
-  document.getElementById('tvaOn').checked=true; // nouveau document : TVA 18 % par défaut
   window._editingDocNum=null;
   window._sourceDocNum=invNum;
   document.getElementById('invDate').value=new Date().toISOString().slice(0,10);
@@ -2838,9 +3105,35 @@ function generatePDF(){
   const isLibre = d.t.id==='libre';
   const libreLines = isLibre ? (d.lines||[]) : [];
   const displayTypeName = isLibre ? libreSummary() : (customLabel || d.t.name);
+  const cAddr=(document.getElementById('cAddr').value||'').trim();
+  const cNinea=(document.getElementById('cNinea').value||'').trim();
+  const docsNow=loadJSON(STORAGE_KEY_DOCS,[]);
+  let editingRec = window._editingDocNum ? docsNow.find(x=>x.invNum===window._editingDocNum) : null;
+  if(editingRec && editingRec.docType!==d.docType){
+    // le type a changé (ex. devis rouvert puis basculé en facture) : c'est un nouveau document
+    if(editingRec.docType==='devis' && d.docType==='facture') window._pendingLinkFromDevis=editingRec.invNum;
+    editingRec=null; window._editingDocNum=null;
+  }
   const invNumEl=document.getElementById('invNum');
-  if(!window._invTouched || !invNumEl.value.trim()) invNumEl.value=uniqueInvoiceId(d.t.id);
-  const invNum=invNumEl.value.trim();
+  let invNum;
+  let lockedRedownload=false;
+  if(editingRec){
+    invNum=editingRec.invNum;
+    if(editingRec.docType==='facture'){
+      const changed = Math.round(d.total)!==Math.round(editingRec.total)
+        || cName!==(editingRec.client.name||'') || cAddr!==(editingRec.client.addr||'') || cNinea!==(editingRec.client.ninea||'');
+      if(changed){
+        showToast('🔒 '+invNum+' est une facture émise : elle ne peut plus être modifiée. Crée un avoir puis duplique-la pour la corriger.');
+        return;
+      }
+      lockedRedownload=true;
+    }
+  } else {
+    // nouveau document : numéro continu attribué au moment de l'émission
+    invNum=invNumEl.value.trim();
+    if(!invNum || SEQ_RE.test(invNum) || docsNow.some(x=>x.invNum===invNum)) invNum=nextDocNumber(d.docType);
+  }
+  invNumEl.value=invNum;
   const invDateRaw=document.getElementById('invDate').value;
   const bonusBoxOpen=document.getElementById('bonusBox').style.display!=='none';
   const bonusName=bonusBoxOpen ? (document.getElementById('bonusName').value||'').trim() : '';
@@ -2858,6 +3151,12 @@ function generatePDF(){
     const [Y,Mo,Da]=iso.split('-').map(Number);
     return new Date(Y,Mo-1,Da).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'});
   }
+
+  // date d'émission figée : celle de la première émission du document
+  const issueISO = editingRec ? (editingRec.issueDate || (editingRec.createdAt||'').slice(0,10) || new Date().toISOString().slice(0,10))
+                              : new Date().toISOString().slice(0,10);
+  const issueStr = frDate(issueISO);
+  const amountDue = ded.on ? netAPayer : d.total;
 
   const W=210, H=297, M=16, TOP=15, BOTTOM=283;
   const V=[102,36,131], O=[243,146,0], NR=[26,26,26], GR=[107,107,107], LN=[233,230,239];
@@ -2939,23 +3238,23 @@ function generatePDF(){
     doc.setFontSize(F(9));doc.setTextColor(...NR);doc.setFont('helvetica','bold');
     doc.text('BaoPixel Digital Agency',col1X,y+S(4.8));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.1));doc.setTextColor(80,80,80);
-    doc.text(doc.splitTextToSize(stripEmoji(iss.name+(iss.role?' — '+iss.role:'')),62)[0],col1X,y+S(4.8)+LH);
-    doc.text('Mbour / Saly, Petite-Côte, Sénégal',col1X,y+S(4.8)+LH*2);
-    doc.text('+221 76 160 95 85',col1X,y+S(4.8)+LH*3);
-    doc.text('hello@baopixel.com',col1X,y+S(4.8)+LH*4);
-    doc.text('NINEA : 0103191193',col1X,y+S(4.8)+LH*5);
+    companyLines(iss).forEach((l,i)=>doc.text(doc.splitTextToSize(stripEmoji(l),62)[0],col1X,y+S(4.8)+LH*(i+1)));
 
     doc.setFontSize(F(9));doc.setTextColor(...NR);doc.setFont('helvetica','bold');
     const cNameLines=doc.splitTextToSize(cName,52).slice(0,2);
     cNameLines.forEach((l,i)=>doc.text(l,col2X,y+S(4.8)+i*LH));
     let clY=y+S(4.8)+cNameLines.length*LH;
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.1));doc.setTextColor(80,80,80);
-    if(cTel){ doc.text(cTel,col2X,clY); clY+=LH; }
-    if(cProj){ doc.splitTextToSize(cProj,52).slice(0,3).forEach((l,i)=>doc.text(l,col2X,clY+i*LH)); }
+    const clLines=[];
+    if(cAddr) clLines.push(...doc.splitTextToSize(stripEmoji(cAddr),52).slice(0,2));
+    if(cNinea) clLines.push('NINEA : '+stripEmoji(cNinea));
+    if(cTel) clLines.push(cTel);
+    if(cProj) clLines.push(...doc.splitTextToSize(stripEmoji(cProj),52).slice(0,2));
+    clLines.slice(0,7-cNameLines.length).forEach((l,i)=>doc.text(l,col2X,clY+i*LH));
 
     doc.setFontSize(F(8.3));doc.setTextColor(...NR);doc.setFont('helvetica','bold');
     doc.text(invNum,col3X,y+S(3.8));
-    const c3=[["DATE D'ÉMISSION",today],
+    const c3=[["DATE D'ÉMISSION",issueStr],
               [d.t.dateLabel||'DATE DE LA PRESTATION',frDate(invDateRaw)],
               [isDevis?'VALABLE JUSQU\'AU':'ÉCHÉANCE', isDevis?(d.untilStr||'—'):'À réception']];
     let cy=y+S(8);
@@ -3074,7 +3373,7 @@ function generatePDF(){
     // ---- TOTAUX ----
     totalRow('Total HT', FCFA(d.totalHT)+' FCFA');
     if(d.tva>0) totalRow('TVA ('+Math.round(d.tvaRate*100)+'%)', FCFA(d.tva)+' FCFA');
-    else totalRow('TVA (0%)', 'Exonéré', {bold:false,color:GR});
+    else totalRow('TVA', 'Non applicable', {bold:false,color:GR});
     if(bonusOn) totalRow(bonusName+' (bonus)', 'OFFERTE', {color:GREEN});
     y+=S(2);
     bigTotal('MONTANT TOTAL TTC', FCFA(d.total)+' FCFA', V, O);
@@ -3085,7 +3384,12 @@ function generatePDF(){
       y+=S(2);
       bigTotal('NET À PAYER', FCFA(netAPayer)+' FCFA', O, [255,255,255]);
     }
-    y+=S(2.5);
+    y+=S(1);
+    // ---- MONTANT EN TOUTES LETTRES ----
+    doc.setFont('helvetica','bold');doc.setFontSize(F(8.4));doc.setTextColor(...NR);
+    doc.splitTextToSize((isDevis?'Arrêté le présent devis à la somme de : ':'Arrêtée la présente facture à la somme de : ')
+      +montantEnLettres(amountDue)+' ('+FCFA(amountDue)+' FCFA).',W-2*M).forEach(l=>{ ensure(S(5)); doc.text(l,M,y); y+=S(4.3); });
+    y+=S(3);
 
     // ---- CONDITIONS DE RÈGLEMENT ----
     sectionHeading(isDevis ? 'CONDITIONS PRÉVUES' : 'CONDITIONS DE RÈGLEMENT');
@@ -3099,7 +3403,9 @@ function generatePDF(){
     }
     ensure(S(10));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.3));doc.setTextColor(...GR);
-    doc.text('Modalités de paiement : Wave · Orange Money · Virement · Espèces',M,y+S(2));y+=S(6.3);
+    doc.text('Modalités de paiement : Wave · Orange Money · Virement · Espèces  ·  Devise : franc CFA (XOF)',M,y+S(2));y+=S(6.3);
+    if(COMPANY.bank){ doc.text(doc.splitTextToSize('Coordonnées bancaires : '+COMPANY.bank,W-2*M)[0],M,y);y+=S(4.3); }
+    if(!isDevis){ doc.text('Paiement à réception de la facture. Tout retard de paiement pourra donner lieu à des pénalités.',M,y);y+=S(4.3); }
     if(!isLibre){ doc.text('Délai de livraison : '+(d.t.delivery||'à convenir'),M,y);y+=S(4.3); }
     if(isDevis){
       doc.setTextColor(...O);doc.setFont('helvetica','bold');
@@ -3133,7 +3439,7 @@ function generatePDF(){
     // ---- SIGNATURES ----
     sectionHeading(isDevis ? 'BON POUR ACCORD' : 'SIGNATURES');
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.4));doc.setTextColor(...GR);
-    doc.text('Fait à Mbour / Saly, le '+today,M,y);
+    doc.text('Fait à '+COMPANY.city+', le '+issueStr,M,y);
     y+=S(4.4);
     if(isDevis){
       doc.setFont('helvetica','italic');doc.setFontSize(F(7.6));
@@ -3156,7 +3462,7 @@ function generatePDF(){
     doc.setFontSize(F(7.4));doc.setTextColor(...GR);
     if(iss.role) doc.text(doc.splitTextToSize(stripEmoji(iss.role),sigColW-32)[0],sig1X+3,y+S(14.6));
     doc.setFontSize(F(8.2));doc.setTextColor(...NR);
-    doc.text('Date : '+today,sig1X+3,y+S(19.5));
+    doc.text('Date : '+issueStr,sig1X+3,y+S(19.5));
     // colonne client : le nom peut tenir sur 2 lignes, le reste se décale d'autant
     const cliLines=doc.splitTextToSize('Nom : '+(cName||'_______________________'),sigColW-6).slice(0,2);
     let sy=y+S(10.5);
@@ -3175,9 +3481,10 @@ function generatePDF(){
     ensure(S(11));
     doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,y,W-M,y);y+=S(4.4);
     doc.setFont('helvetica','normal');doc.setFontSize(F(7.5));doc.setTextColor(...GR);
-    doc.text('BaoPixel Digital Agency  •  hello@baopixel.com  •  +221 76 160 95 85',W/2,y,{align:'center'});
+    doc.setFontSize(F(7.2));
+    doc.text(companyFooterLines()[0],W/2,y,{align:'center'});
     y+=S(3.8);
-    doc.text('N.I.N.E.A : 0103191193',W/2,y,{align:'center'});
+    doc.text(companyFooterLines()[1],W/2,y,{align:'center'});
 
     return {doc, bottom:y};
   }
@@ -3193,11 +3500,12 @@ function generatePDF(){
 
   const safe=cName.replace(/[^a-zA-Z0-9]/g,'_');
   const filePrefix = isDevis ? 'Devis_BaoPixel_' : 'Facture_BaoPixel_';
-  doc.save(filePrefix+safe+'.pdf');
+  doc.save(filePrefix+safe+'_'+invNum+'.pdf');
+  if(lockedRedownload){ showToast('⬇️ '+invNum+' retéléchargée à l\'identique.'); return; }
 
   // ---- Sauvegarde dans le classeur ----
   persistCurrentDoc({
-    invNum, docType:d.docType, cName, cTel, cProj,
+    invNum, docType:d.docType, cName, cTel, cProj, cAddr, cNinea, issueDate:issueISO,
     typeName:displayTypeName, gName:d.gName, dName:d.dName, qty:d.qty,
     total:d.total, totalHT:d.totalHT, tva:d.tva, tvaRate:d.tvaRate, validDays:d.validDays, untilStr:d.untilStr,
     invDate: invDateRaw || new Date().toISOString().slice(0,10),
