@@ -129,6 +129,20 @@
   /* SEGMENTED */
   .seg{display:grid;gap:7px}
   .seg.c3{grid-template-columns:1fr 1fr 1fr}
+  .seg.c2{grid-template-columns:1fr 1fr}
+
+  /* FACTURATION LIBRE */
+  .mode-card{padding:12px}
+  .lib-line{border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:9px;background:var(--card);transition:border-color var(--t)}
+  .lib-line:focus-within{border-color:var(--violet-l)}
+  .lib-line .top{display:flex;gap:8px;align-items:center}
+  .lib-line .top .nm{flex:1;font-weight:600}
+  .lib-line .rm{border:none;background:#FBE5E5;color:#B33A3A;width:38px;height:40px;border-radius:9px;cursor:pointer;flex:none;font-size:14px}
+  .lib-line .desc{margin-top:7px;font-size:13px}
+  .lib-line .nums{display:grid;grid-template-columns:76px 1fr auto;gap:8px;margin-top:7px;align-items:center}
+  .lib-line .lt{font-family:'Archivo';font-weight:700;color:var(--violet);font-size:14px;white-space:nowrap;min-width:84px;text-align:right}
+  .lib-sum{display:flex;justify-content:space-between;align-items:baseline;padding:10px 4px 0;font-size:13px;color:var(--gris)}
+  .lib-sum b{font-family:'Archivo';font-size:17px;color:var(--noir)}
   .opt{border:1.5px solid var(--line);border-radius:11px;padding:9px 10px;cursor:pointer;transition:border-color var(--t),background-color var(--t),transform .15s;text-align:center;background:var(--card)}
   .opt:hover{border-color:var(--violet-l);background:var(--violet-ll);transform:translateY(-1px)}
   .opt:active{transform:translateY(0) scale(.97)}
@@ -749,6 +763,24 @@
     <!-- ============ CONFIG ============ -->
     <div class="config">
 
+      <!-- MODE DE FACTURATION -->
+      <div class="card mode-card">
+        <div class="seg c2" id="modeSeg">
+          <div class="opt on" data-mode="calc" onclick="setMode('calc')"><div class="t">🧮 Calcul au temps</div><div class="s">Heures × taux, gamme, délai</div></div>
+          <div class="opt" data-mode="libre" onclick="setMode('libre')"><div class="t">✍️ Facturation libre</div><div class="s">Tu saisis prestations et montants</div></div>
+        </div>
+      </div>
+
+      <!-- PRESTATIONS LIBRES -->
+      <div class="card" id="libreCard" style="display:none">
+        <div class="step"><span class="n">1</span><h3>Prestations facturées</h3></div>
+        <div class="hint">Une ligne par prestation, au montant que tu factures. Aucun calcul de temps ni arrondi.</div>
+        <div id="libreLines"></div>
+        <button class="add-addon-btn" onclick="addLibreLine()">➕ Ajouter une prestation</button>
+        <div class="lib-sum"><span id="libreCount">0 prestation</span><span>Total <b id="libreSum">0 F</b></span></div>
+      </div>
+
+      <div id="calcCards">
       <!-- TYPE -->
       <div class="card">
         <div class="step"><span class="n">1</span><h3>Type de projet</h3></div>
@@ -836,6 +868,7 @@
           <input type="number" id="rate" value="20000" min="0" step="1000" oninput="calc()">
         </div>
       </div>
+      </div><!-- /calcCards -->
 
     </div>
 
@@ -897,6 +930,12 @@
             <div class="row">
               <div class="fld"><input type="text" id="invNum" placeholder="N° document"></div>
               <div class="fld"><input type="date" id="invDate"></div>
+            </div>
+
+            <div class="bonus-toggle" id="issuerToggle" style="display:flex;width:fit-content" onclick="toggleIssuer()">✍️ Émettre au nom d'une autre personne</div>
+            <div id="issuerBox" style="display:none">
+              <div class="fld" style="margin-top:8px"><input type="text" id="issuerName" placeholder="Nom du signataire (remplace Tanor Fall)"></div>
+              <div class="fld" style="margin-top:8px"><input type="text" id="issuerRole" placeholder="Fonction (ex : Chef de projet) — optionnel"></div>
             </div>
 
             <div class="bonus-toggle" id="bonusToggle" onclick="toggleBonus()">🎁 Ajouter un bonus offert</div>
@@ -1042,7 +1081,7 @@ const DEFAULT_ADDONS = [
   {id:'rush',  nm:'Livraison express des fichiers',pr:10000},
 ];
 
-let state = {type:'airbnb', gamme:'ess', delai:'norm', addons:new Set(), docType:'devis'};
+let state = {type:'airbnb', gamme:'ess', delai:'norm', addons:new Set(), docType:'devis', mode:'calc', lines:[]};
 
 // ---- Stockage local (classeur devis/factures + types récurrents + options) ----
 const STORAGE_KEY_DOCS='bp_docs_v1', STORAGE_KEY_TYPES='bp_custom_types_v1', STORAGE_KEY_ADDONS='bp_addons_v1';
@@ -1627,8 +1666,7 @@ function setDocType(type){
   document.getElementById('convertBtn').style.display = isDevis ? 'block' : 'none';
   // régénère le n° de document avec le bon préfixe si l'utilisateur n'y a pas touché
   if(!window._invTouched){
-    const t=TYPES.find(x=>x.id===state.type);
-    document.getElementById('invNum').value=uniqueInvoiceId(t.id);
+    document.getElementById('invNum').value=uniqueInvoiceId(currentType().id);
   }
   calc();
 }
@@ -1662,6 +1700,7 @@ function persistCurrentDoc(p){
   rec.typeName=p.typeName; rec.gName=p.gName; rec.dName=p.dName; rec.qty=p.qty;
   rec.total=p.total; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
   rec.snapshot=p.snapshot;
+  rec.issuer=p.issuer||null;
   rec.dedAmount=p.dedAmount||0; rec.dedLabel=p.dedLabel||''; rec.net=p.net;
   rec.revision=existing ? (existing.revision||1)+1 : 1;
   rec.updatedAt=new Date().toISOString();
@@ -1774,7 +1813,7 @@ function renderClasseur(){
                     ((r.suiteNums&&r.suiteNums.length)?`<br><small style="color:var(--gris-l)">↪︎ ${r.suiteNums.join(', ')}</small>`:'')+
                     ((r.revision&&r.revision>1)?`<br><small style="color:var(--orange)">rév. ${r.revision}</small>`:'');
     return `<tr><td>${dateStr}</td><td><b>${r.invNum}</b>${linkInfo}</td><td>${r.client.name||'—'}</td>`+
-           `<td>${r.typeName} · ${r.gName}</td><td><b>${FCFA(montantDu(r))} F</b>${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
+           `<td>${escHtml(r.typeName)}${r.gName?' · '+escHtml(r.gName):''}</td><td><b>${FCFA(montantDu(r))} F</b>${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
            `<td><span class="badge ${st.cls}">${st.txt}</span></td>`+
            `<td><div class="row-actions">${actions}</div></td></tr>`;
   }).join('');
@@ -1971,7 +2010,7 @@ function generateRecuPDF(recuRec, factureRec){
 
   // signature
   doc.setFont('helvetica','normal');doc.setFontSize(8.6);doc.setTextColor(...NR);
-  doc.text('Pour BaoPixel — Tanor Fall',M,y+30);
+  doc.text('Pour BaoPixel — '+stripEmoji((factureRec.issuer&&factureRec.issuer.name)||DEFAULT_ISSUER.name),M,y+30);
   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GR);
   doc.text('Reçu établi le '+new Date().toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'}),M,y+35);
 
@@ -2360,6 +2399,7 @@ function facturerFromDevis(invNum){
 
 // ---- Calcul ----
 function calc(){
+  if(state.mode==='libre') return calcLibre();
   const t=TYPES.find(x=>x.id===state.type);
   const rate=+document.getElementById('rate').value||0;
   const hS=+document.getElementById('hShoot').value||0;
@@ -2401,6 +2441,11 @@ function calc(){
   [...state.addons].forEach(id=>{const a=ADDONS.find(x=>x.id===id);rows.push(li(a.nm,'+'+FCFA(a.pr)+' F',false,null,'mut'))});
   document.getElementById('brk').innerHTML=rows.join('');
 
+  calcTail({t,rate,hS,hE,hUnit,qty,gm,dl,gName,dName,volPct,baseUnit,subtotal,addSum,total,unitsFactor});
+}
+// partie commune aux deux modes : ticket, acompte, déduction, validité
+function calcTail(base){
+  const {t,total,qty}=base;
   const customLabelLive = (t.id==='custom') ? (document.getElementById('customLabel').value||'').trim() : '';
   document.getElementById('tName').textContent = customLabelLive || t.name;
   const totEl=document.getElementById('tot');
@@ -2440,7 +2485,7 @@ function calc(){
   const validUntilEl=document.getElementById('validUntilText');
   if(validUntilEl) validUntilEl.innerHTML = validDays+' jours — valable jusqu\'au <b>'+untilStr+'</b>';
 
-  window._inv={t,rate,hS,hE,hUnit,qty,gm,dl,gName,dName,volPct,baseUnit,subtotal,addSum,total,unitsFactor,validDays,untilStr,docType:state.docType,
+  window._inv={...base,validDays,untilStr,docType:state.docType,
     dedOn:ded.on,dedAmount:ded.amount,dedLabel:ded.label,net};
 }
 function li(label,val,strong,note,cls){
@@ -2449,6 +2494,106 @@ function li(label,val,strong,note,cls){
   return `<div class="${c}"><span>${label}${n}</span><span class="v">${val}</span></div>`;
 }
 function syncBtn(){}
+
+// ---- Facturation libre (prestations saisies à la main, sans calcul de temps) ----
+const LIBRE_TYPE={id:'libre', ic:'✍️', name:'Facturation libre', unit:'prestation', unitP:'prestations', vol:false,
+  objet:'Prestations', dateLabel:'DATE DE LA PRESTATION', desc:[], delivery:'', inclusions:[]};
+function currentType(){ return state.mode==='libre' ? LIBRE_TYPE : TYPES.find(x=>x.id===state.type); }
+function escHtml(str){ return String(str==null?'':str).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function newLibreLine(){ return {nm:'',desc:'',qty:1,pu:0}; }
+function libreLinesFilled(){ return state.lines.filter(l=>(l.nm||'').trim() || l.pu>0); }
+function libreSummary(){
+  const names=libreLinesFilled().map(l=>(l.nm||'').trim()).filter(Boolean);
+  if(!names.length) return LIBRE_TYPE.name;
+  const txt=names.join(' + ');
+  return txt.length>70 ? txt.slice(0,67).trimEnd()+'…' : txt;
+}
+function setMode(m){
+  state.mode = m==='libre' ? 'libre' : 'calc';
+  const libre = state.mode==='libre';
+  document.querySelectorAll('#modeSeg .opt').forEach(o=>o.classList.toggle('on',o.dataset.mode===state.mode));
+  document.getElementById('calcCards').style.display = libre ? 'none' : '';
+  document.getElementById('libreCard').style.display = libre ? '' : 'none';
+  if(libre){
+    if(!state.lines.length) state.lines=[newLibreLine()];
+    renderLibreLines();
+  }
+  if(!window._invTouched) document.getElementById('invNum').value=uniqueInvoiceId(currentType().id);
+  calc();
+}
+function renderLibreLines(){
+  const box=document.getElementById('libreLines');
+  box.innerHTML='';
+  state.lines.forEach((ln,i)=>{
+    const el=document.createElement('div');
+    el.className='lib-line';
+    el.innerHTML=
+      '<div class="top"><input type="text" class="nm" placeholder="Prestation (ex : Site vitrine)">'+
+      '<button class="rm" title="Retirer cette prestation">🗑</button></div>'+
+      '<input type="text" class="desc" placeholder="Détail (optionnel) — ex : 5 pages, responsive, formulaire de contact">'+
+      '<div class="nums"><input type="number" class="qty" min="1" step="1" placeholder="Qté">'+
+      '<input type="number" class="pu" min="0" step="1000" placeholder="Montant (FCFA)"><span class="lt"></span></div>';
+    const q=sel=>el.querySelector(sel);
+    q('.nm').value=ln.nm||''; q('.desc').value=ln.desc||'';
+    q('.qty').value=ln.qty||1; q('.pu').value=ln.pu||'';
+    const paint=()=>{ q('.lt').textContent=FCFA(ln.qty*ln.pu)+' F'; };
+    const upd=()=>{
+      ln.nm=q('.nm').value; ln.desc=q('.desc').value;
+      const qv=+q('.qty').value; ln.qty = qv>0 ? qv : 1;
+      ln.pu=Math.max(0,+q('.pu').value||0);
+      paint(); calc();
+    };
+    ['.nm','.desc','.qty','.pu'].forEach(sel=>q(sel).addEventListener('input',upd));
+    q('.rm').onclick=()=>{
+      state.lines.splice(i,1);
+      if(!state.lines.length) state.lines.push(newLibreLine());
+      renderLibreLines(); calc();
+    };
+    paint();
+    box.appendChild(el);
+  });
+}
+function addLibreLine(){
+  state.lines.push(newLibreLine());
+  renderLibreLines(); calc();
+  const all=document.querySelectorAll('#libreLines .nm');
+  if(all.length) all[all.length-1].focus();
+}
+function calcLibre(){
+  const lines=libreLinesFilled();
+  const subtotal=lines.reduce((sum,l)=>sum+l.qty*l.pu,0);   // montant exact, pas d'arrondi
+  const rows=lines.map(l=>li(escHtml((l.nm||'').trim()||'Prestation')+(l.qty!==1?' × '+l.qty:''), FCFA(l.qty*l.pu)+' F'));
+  if(!rows.length) rows.push(li('Saisis tes prestations à gauche','—',false,null,'mut'));
+  document.getElementById('brk').innerHTML=rows.join('');
+  document.getElementById('libreCount').textContent=lines.length+' prestation'+(lines.length>1?'s':'');
+  document.getElementById('libreSum').textContent=FCFA(subtotal)+' F';
+  calcTail({t:LIBRE_TYPE, rate:0, hS:0, hE:0, hUnit:0, qty:1, gm:1, dl:1, gName:'', dName:'', volPct:0,
+    baseUnit:0, subtotal, addSum:0, total:subtotal, unitsFactor:1, lines:lines.map(l=>({...l}))});
+}
+
+// ---- Signataire du document (par défaut Tanor Fall) ----
+const DEFAULT_ISSUER={name:'Tanor Fall', role:'Fondateur & Directeur Créatif'};
+function getIssuer(){
+  const open=document.getElementById('issuerBox').style.display!=='none';
+  const name=open ? (document.getElementById('issuerName').value||'').trim() : '';
+  if(!name) return {...DEFAULT_ISSUER, custom:false};
+  return {name, role:(document.getElementById('issuerRole').value||'').trim(), custom:true};
+}
+function setIssuer(name,role){
+  const on=!!(name||'').trim();
+  document.getElementById('issuerBox').style.display = on ? 'block' : 'none';
+  document.getElementById('issuerToggle').textContent = on ? '✍️ Revenir à Tanor Fall comme signataire' : '✍️ Émettre au nom d\'une autre personne';
+  document.getElementById('issuerName').value = on ? name : '';
+  document.getElementById('issuerRole').value = on ? (role||'') : '';
+}
+function toggleIssuer(){
+  const open=document.getElementById('issuerBox').style.display==='none';
+  if(open){
+    document.getElementById('issuerBox').style.display='block';
+    document.getElementById('issuerToggle').textContent='✍️ Revenir à Tanor Fall comme signataire';
+    document.getElementById('issuerName').focus();
+  } else setIssuer('','');
+}
 
 // ---- Déduction (facture de solde) ----
 function getDeduction(){
@@ -2486,6 +2631,8 @@ function buildSnapshot(){
   const bonusOpen=document.getElementById('bonusBox').style.display!=='none';
   const ded=getDeduction();
   return {
+    mode:state.mode,
+    lines: state.mode==='libre' ? libreLinesFilled().map(l=>({...l})) : [],
     typeId:state.type,
     customLabel:(document.getElementById('customLabel').value||'').trim(),
     rate:+document.getElementById('rate').value||0,
@@ -2499,6 +2646,8 @@ function buildSnapshot(){
     bonusDesc: bonusOpen ? (document.getElementById('bonusDesc').value||'').trim() : '',
     dedLabel: ded.on ? ded.label : '',
     dedAmount: ded.on ? ded.amount : 0,
+    issuerName: getIssuer().custom ? getIssuer().name : '',
+    issuerRole: getIssuer().custom ? getIssuer().role : '',
   };
 }
 function applySnapshot(sn){
@@ -2532,6 +2681,9 @@ function applySnapshot(sn){
     document.getElementById('bonusDesc').value='';
   }
   setDeduction(sn.dedLabel,sn.dedAmount||0);
+  setIssuer(sn.issuerName||'', sn.issuerRole||'');
+  state.lines=(sn.lines||[]).map(l=>({nm:l.nm||'',desc:l.desc||'',qty:l.qty||1,pu:l.pu||0}));
+  setMode(sn.mode==='libre' ? 'libre' : 'calc');
 }
 // reconstitue un snapshot approximatif pour les anciens documents enregistrés avant cette fonctionnalité
 function snapshotFromLegacy(rec){
@@ -2546,12 +2698,13 @@ function snapshotFromLegacy(rec){
     qty:rec.qty||1, vol:40,
     gamme:g?g.id:state.gamme, delai:d?d.id:state.delai,
     addons:[], bonusName:'', bonusDesc:'', dedLabel:'', dedAmount:0,
+    mode:'calc', lines:[],
   };
 }
 
 // ---- Mode édition / duplication ----
 function regenNumber(){
-  const t=TYPES.find(x=>x.id===state.type)||TYPES[0];
+  const t=currentType()||TYPES[0];
   window._invTouched=false;
   document.getElementById('invNum').value=uniqueInvoiceId(t.id);
 }
@@ -2659,7 +2812,9 @@ function generatePDF(){
   const cTel=(document.getElementById('cTel').value||'').trim();
   const cProj=(document.getElementById('cProj').value||'').trim();
   const customLabel=(d.t.id==='custom') ? (document.getElementById('customLabel').value||'').trim() : '';
-  const displayTypeName = customLabel || d.t.name;
+  const isLibre = d.t.id==='libre';
+  const libreLines = isLibre ? (d.lines||[]) : [];
+  const displayTypeName = isLibre ? libreSummary() : (customLabel || d.t.name);
   const invNumEl=document.getElementById('invNum');
   if(!window._invTouched || !invNumEl.value.trim()) invNumEl.value=uniqueInvoiceId(d.t.id);
   const invNum=invNumEl.value.trim();
@@ -2669,6 +2824,7 @@ function generatePDF(){
   const bonusDesc=bonusBoxOpen ? (document.getElementById('bonusDesc').value||'').trim() : '';
   const bonusOn=bonusName.length>0;
   const ded=getDeduction();
+  const iss=getIssuer();
   const netAPayer=Math.max(0,d.total-ded.amount);
   const isDevis = d.docType==='devis';
   const docLabel = isDevis ? 'DEVIS' : 'FACTURE';
@@ -2760,7 +2916,7 @@ function generatePDF(){
     doc.setFontSize(F(9));doc.setTextColor(...NR);doc.setFont('helvetica','bold');
     doc.text('BaoPixel Digital Agency',col1X,y+S(4.8));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.1));doc.setTextColor(80,80,80);
-    doc.text('Tanor Fall — Fondateur & Directeur Créatif',col1X,y+S(4.8)+LH);
+    doc.text(doc.splitTextToSize(stripEmoji(iss.name+(iss.role?' — '+iss.role:'')),62)[0],col1X,y+S(4.8)+LH);
     doc.text('Mbour / Saly, Petite-Côte, Sénégal',col1X,y+S(4.8)+LH*2);
     doc.text('+221 76 160 95 85',col1X,y+S(4.8)+LH*3);
     doc.text('hello@baopixel.com',col1X,y+S(4.8)+LH*4);
@@ -2790,7 +2946,9 @@ function generatePDF(){
     y+=blockH+S(4);
 
     // ---- OBJET ----
-    const objetText=(customLabel ? 'Prestation — '+customLabel : (d.t.objet||d.t.name))+' · Pack '+d.gName+(bonusOn?' + '+bonusName+' offert':'');
+    const objetText = isLibre
+      ? (cProj || libreLines.map(l=>(l.nm||'').trim()).filter(Boolean).join(' · ') || 'Prestations')+(bonusOn?' + '+bonusName+' offert':'')
+      : (customLabel ? 'Prestation — '+customLabel : (d.t.objet||d.t.name))+' · Pack '+d.gName+(bonusOn?' + '+bonusName+' offert':'');
     doc.setFontSize(F(8.7));
     const objetLines=doc.splitTextToSize(objetText,W-2*M-38);
     const objetH=Math.max(S(8.5),S(3)+objetLines.length*S(4.1));
@@ -2814,23 +2972,47 @@ function generatePDF(){
     doc.text('TOTAL HT',W-M-3,y+S(5.4),{align:'right'});
     y+=S(8);
 
-    // ligne prestation principale
-    const puUnit=Math.round((d.baseUnit*d.gm*d.dl)/500)*500;
-    const itemTitle='Pack '+d.gName+' — '+displayTypeName;
-    const subLines=(d.t.desc||[]).slice(0,5);
-    const rowH=S(7.5)+subLines.length*S(3.8);
-    ensure(rowH+S(2));
-    doc.setFont('helvetica','bold');doc.setFontSize(F(9));doc.setTextColor(...NR);
-    doc.text(itemTitle,M+3,y+S(5.5));
-    doc.setFont('helvetica','italic');doc.setFontSize(F(7.6));doc.setTextColor(...GR);
-    subLines.forEach((s,i)=>doc.text('• '+s,M+3,y+S(9.6)+i*S(3.8)));
-    doc.setFont('helvetica','normal');doc.setFontSize(F(9));doc.setTextColor(...NR);
-    doc.text(String(d.qty),M+112,y+S(5.5));
-    doc.text(FCFA(puUnit)+' F',M+140,y+S(5.5),{align:'right'});
-    doc.setFont('helvetica','bold');
-    doc.text(FCFA(d.subtotal)+' F',W-M-3,y+S(5.5),{align:'right'});
-    doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,y+rowH,W-M,y+rowH);
-    y+=rowH+S(1.5);
+    // lignes de facturation libre
+    if(isLibre){
+      libreLines.forEach(l=>{
+        doc.setFont('helvetica','bold');doc.setFontSize(F(9));
+        const tLines=doc.splitTextToSize(stripEmoji((l.nm||'').trim()||'Prestation'),100);
+        doc.setFont('helvetica','italic');doc.setFontSize(F(7.6));
+        const dLines=(l.desc||'').trim() ? doc.splitTextToSize(stripEmoji(l.desc.trim()),100).slice(0,3) : [];
+        const rH=S(7.5)+(tLines.length-1)*S(4)+dLines.length*S(3.8);
+        ensure(rH+S(2));
+        doc.setFont('helvetica','bold');doc.setFontSize(F(9));doc.setTextColor(...NR);
+        tLines.forEach((tl,i)=>doc.text(tl,M+3,y+S(5.5)+i*S(4)));
+        doc.setFont('helvetica','italic');doc.setFontSize(F(7.6));doc.setTextColor(...GR);
+        const dy=y+S(9.6)+(tLines.length-1)*S(4);
+        dLines.forEach((dl,i)=>doc.text(dl,M+3,dy+i*S(3.8)));
+        doc.setFont('helvetica','normal');doc.setFontSize(F(9));doc.setTextColor(...NR);
+        doc.text(String(l.qty),M+112,y+S(5.5));
+        doc.text(FCFA(l.pu)+' F',M+140,y+S(5.5),{align:'right'});
+        doc.setFont('helvetica','bold');
+        doc.text(FCFA(l.qty*l.pu)+' F',W-M-3,y+S(5.5),{align:'right'});
+        doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,y+rH,W-M,y+rH);
+        y+=rH+S(1.5);
+      });
+    } else {
+      // ligne prestation principale
+      const puUnit=Math.round((d.baseUnit*d.gm*d.dl)/500)*500;
+      const itemTitle='Pack '+d.gName+' — '+displayTypeName;
+      const subLines=(d.t.desc||[]).slice(0,5);
+      const rowH=S(7.5)+subLines.length*S(3.8);
+      ensure(rowH+S(2));
+      doc.setFont('helvetica','bold');doc.setFontSize(F(9));doc.setTextColor(...NR);
+      doc.text(itemTitle,M+3,y+S(5.5));
+      doc.setFont('helvetica','italic');doc.setFontSize(F(7.6));doc.setTextColor(...GR);
+      subLines.forEach((s,i)=>doc.text('• '+s,M+3,y+S(9.6)+i*S(3.8)));
+      doc.setFont('helvetica','normal');doc.setFontSize(F(9));doc.setTextColor(...NR);
+      doc.text(String(d.qty),M+112,y+S(5.5));
+      doc.text(FCFA(puUnit)+' F',M+140,y+S(5.5),{align:'right'});
+      doc.setFont('helvetica','bold');
+      doc.text(FCFA(d.subtotal)+' F',W-M-3,y+S(5.5),{align:'right'});
+      doc.setDrawColor(...LN);doc.setLineWidth(.3);doc.line(M,y+rowH,W-M,y+rowH);
+      y+=rowH+S(1.5);
+    }
 
     // ligne bonus offert
     if(bonusOn){
@@ -2851,8 +3033,8 @@ function generatePDF(){
       y+=bRowH+S(1.5);
     }
 
-    // options / add-ons
-    [...state.addons].forEach(id=>{
+    // options / add-ons (mode calcul uniquement)
+    (isLibre?[]:[...state.addons]).forEach(id=>{
       const a=ADDONS.find(x=>x.id===id);
       ensure(S(9));
       doc.setFont('helvetica','normal');doc.setFontSize(F(8.5));doc.setTextColor(...NR);
@@ -2894,7 +3076,7 @@ function generatePDF(){
     ensure(S(10));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.3));doc.setTextColor(...GR);
     doc.text('Modalités de paiement : Wave · Orange Money · Virement · Espèces',M,y+S(2));y+=S(6.3);
-    doc.text('Délai de livraison : '+(d.t.delivery||'à convenir'),M,y);y+=S(4.3);
+    if(!isLibre){ doc.text('Délai de livraison : '+(d.t.delivery||'à convenir'),M,y);y+=S(4.3); }
     if(isDevis){
       doc.setTextColor(...O);doc.setFont('helvetica','bold');
       doc.text('Devis valable '+d.validDays+' jours — jusqu\'au '+(d.untilStr||'—'),M,y);y+=S(4.3);
@@ -2902,10 +3084,11 @@ function generatePDF(){
     y+=S(3.5);
 
     // ---- INCLUSIONS DU PACK (sur 2 colonnes) ----
-    sectionHeading('INCLUSIONS DU PACK');
     const inclusions=[...(d.t.inclusions||[])];
-    [...state.addons].forEach(id=>{const a=ADDONS.find(x=>x.id===id);inclusions.push(a.nm+' inclus');});
+    (isLibre?[]:[...state.addons]).forEach(id=>{const a=ADDONS.find(x=>x.id===id);inclusions.push(a.nm+' inclus');});
     if(bonusOn) inclusions.push('BONUS : '+bonusName+(bonusDesc?' — '+bonusDesc:'')+' (offert)');
+    if(inclusions.length){
+    sectionHeading(isLibre ? 'INCLUS' : 'INCLUSIONS DU PACK');
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.2));doc.setTextColor(...NR);
     const incColW=(W-2*M-8)/2, incLH=S(4.1);
     const blocks=inclusions.map(it=>doc.splitTextToSize('• '+it,incColW));
@@ -2921,6 +3104,7 @@ function generatePDF(){
       col.forEach(b=>{ b.forEach((l,i)=>doc.text(l,x,yy+i*incLH)); yy+=b.length*incLH; });
     });
     y=incTop+colH+S(3.5);
+    }
 
     // ---- SIGNATURES ----
     sectionHeading(isDevis ? 'BON POUR ACCORD' : 'SIGNATURES');
@@ -2944,9 +3128,9 @@ function generatePDF(){
     doc.text('POUR BAOPIXEL',sig1X+3,y+S(5));
     doc.text(isDevis ? 'POUR LE CLIENT (accord)' : 'POUR LE CLIENT',sig2X+3,y+S(5));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.2));doc.setTextColor(...NR);
-    doc.text('Nom : Tanor Fall',sig1X+3,y+S(10.5));
+    doc.text(doc.splitTextToSize('Nom : '+stripEmoji(iss.name),sigColW-32)[0],sig1X+3,y+S(10.5));
     doc.setFontSize(F(7.4));doc.setTextColor(...GR);
-    doc.text('Fondateur & Directeur Créatif',sig1X+3,y+S(14.6));
+    if(iss.role) doc.text(doc.splitTextToSize(stripEmoji(iss.role),sigColW-32)[0],sig1X+3,y+S(14.6));
     doc.setFontSize(F(8.2));doc.setTextColor(...NR);
     doc.text('Date : '+today,sig1X+3,y+S(19.5));
     // colonne client : le nom peut tenir sur 2 lignes, le reste se décale d'autant
@@ -2997,6 +3181,7 @@ function generatePDF(){
     dedAmount: ded.on ? ded.amount : 0,
     dedLabel: ded.on ? ded.label : '',
     net: netAPayer,
+    issuer: iss.custom ? {name:iss.name, role:iss.role} : null,
   });
 }
 
