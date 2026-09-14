@@ -237,6 +237,9 @@
   .edit-banner .eb-x{background:none;border:none;cursor:pointer;font-size:15px;color:var(--gris);padding:2px 4px;border-radius:6px}
   .edit-banner .eb-x:hover{background:rgba(0,0,0,.06);color:var(--noir)}
 
+  .tva-row{display:flex;align-items:center;gap:9px;margin-top:12px;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--noir);background:var(--card)}
+  .tva-row input{width:17px;height:17px;accent-color:var(--violet);cursor:pointer;flex:none}
+  .tva-row small{margin-left:auto;font-weight:500;color:var(--gris-l);font-size:11.5px}
   .client-mini{margin-top:6px}
   .client-mini .lbl{margin-top:14px}
   .bonus-toggle{margin-top:12px;font-size:12.5px;font-weight:600;color:var(--violet);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
@@ -932,6 +935,8 @@
               <div class="fld"><input type="date" id="invDate"></div>
             </div>
 
+            <label class="tva-row"><input type="checkbox" id="tvaOn" checked onchange="calc()"> TVA 18 % appliquée <small id="tvaHint">décocher si exonéré</small></label>
+
             <div class="bonus-toggle" id="issuerToggle" style="display:flex;width:fit-content" onclick="toggleIssuer()">✍️ Émettre au nom d'une autre personne</div>
             <div id="issuerBox" style="display:none">
               <div class="fld" style="margin-top:8px"><input type="text" id="issuerName" placeholder="Nom du signataire (remplace Tanor Fall)"></div>
@@ -1332,7 +1337,7 @@ function renderDashboard(){
     elFact.innerHTML='<div class="dash-empty">Aucune facture en attente de paiement. 💰</div>';
   } else {
     elFact.innerHTML=facturesImpayees.slice(0,5).map(f=>{
-      const reste=f.total-(f.montantEncaisse||0);
+      const reste=montantDu(f)-(f.montantEncaisse||0);
       const days=daysBetween(f.invDate||f.createdAt.slice(0,10));
       const badge=ageBadge(days);
       const partiel=f.status==='partiel'?` · reste ${FCFA(reste)} F`:'';
@@ -1698,7 +1703,7 @@ function persistCurrentDoc(p){
   if(p.docType==='facture' && rec.montantEncaisse===undefined) rec.montantEncaisse=0;
   rec.client={name:p.cName, tel:p.cTel, proj:p.cProj};
   rec.typeName=p.typeName; rec.gName=p.gName; rec.dName=p.dName; rec.qty=p.qty;
-  rec.total=p.total; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
+  rec.total=p.total; rec.totalHT=p.totalHT; rec.tva=p.tva||0; rec.tvaRate=p.tvaRate||0; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
   rec.snapshot=p.snapshot;
   rec.issuer=p.issuer||null;
   rec.dedAmount=p.dedAmount||0; rec.dedLabel=p.dedLabel||''; rec.net=p.net;
@@ -1773,7 +1778,8 @@ function renderClasseur(){
     <div class="exp-sum-card"><div class="kk">⏳ Devis en attente</div><div class="vv">${devisEnAttente.length}</div></div>
     <div class="exp-sum-card"><div class="kk">✅ Devis validés</div><div class="vv">${devisValides.length}</div></div>
     <div class="exp-sum-card"><div class="kk">🧾 Factures émises</div><div class="vv">${factures.length}</div></div>
-    <div class="exp-sum-card"><div class="kk">💰 Total encaissé</div><div class="vv">${FCFA(encaisse)} F</div></div>`;
+    <div class="exp-sum-card"><div class="kk">💰 Total encaissé</div><div class="vv">${FCFA(encaisse)} F</div></div>
+    <div class="exp-sum-card"><div class="kk">🧾 TVA facturée</div><div class="vv">${FCFA(factures.reduce((s,f)=>s+(f.tva||0),0))} F</div></div>`;
 
   const filter=window._classeurFilter||'all';
   const search=(document.getElementById('classeurSearch').value||'').toLowerCase().trim();
@@ -1813,7 +1819,7 @@ function renderClasseur(){
                     ((r.suiteNums&&r.suiteNums.length)?`<br><small style="color:var(--gris-l)">↪︎ ${r.suiteNums.join(', ')}</small>`:'')+
                     ((r.revision&&r.revision>1)?`<br><small style="color:var(--orange)">rév. ${r.revision}</small>`:'');
     return `<tr><td>${dateStr}</td><td><b>${r.invNum}</b>${linkInfo}</td><td>${r.client.name||'—'}</td>`+
-           `<td>${escHtml(r.typeName)}${r.gName?' · '+escHtml(r.gName):''}</td><td><b>${FCFA(montantDu(r))} F</b>${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
+           `<td>${escHtml(r.typeName)}${r.gName?' · '+escHtml(r.gName):''}</td><td><b>${FCFA(montantDu(r))} F</b>${r.tva>0?`<br><small style="color:var(--gris-l)">dont TVA ${FCFA(r.tva)} F</small>`:''}${r.dedAmount>0?`<br><small style="color:var(--gris-l)">net · projet ${FCFA(r.total)} F</small>`:''}${r.docType==='facture'&&r.status==='partiel'?`<br><small style="color:#A66A00">reste ${FCFA(montantDu(r)-(r.montantEncaisse||0))} F</small>`:''}</td>`+
            `<td><span class="badge ${st.cls}">${st.txt}</span></td>`+
            `<td><div class="row-actions">${actions}</div></td></tr>`;
   }).join('');
@@ -1859,7 +1865,7 @@ function openRecuModal(invNum){
     <div class="ri-row"><span>Client</span><b>${rec.client.name||'—'}</b></div>
     ${rec.dedAmount>0?`<div class="ri-row"><span>Total projet</span><b>${FCFA(rec.total)} F</b></div>
     <div class="ri-row"><span>${rec.dedLabel||'Déjà réglé'}</span><b>- ${FCFA(rec.dedAmount)} F</b></div>`:''}
-    <div class="ri-row"><span>${rec.dedAmount>0?'Net à payer':'Montant total'}</span><b>${FCFA(du)} F</b></div>
+    <div class="ri-row"><span>${rec.dedAmount>0?'Net à payer':'Montant total TTC'}</span><b>${FCFA(du)} F</b></div>
     <div class="ri-row"><span>Déjà encaissé</span><b>${FCFA(encaisse)} F</b></div>
     <div class="ri-row total"><span>Reste dû</span><b>${FCFA(reste)} F</b></div>`;
   document.getElementById('recuMontant').value=reste;
@@ -1976,7 +1982,7 @@ function generateRecuPDF(recuRec, factureRec){
   // récap
   const duFacture = (recuRec.montantDu!==undefined) ? recuRec.montantDu : montantDu(factureRec);
   doc.setFontSize(9);doc.setTextColor(...GR);doc.setFont('helvetica','normal');
-  doc.text(factureRec.dedAmount>0?'Net à payer sur la facture':'Montant total de la facture',M,y);
+  doc.text(factureRec.dedAmount>0?'Net à payer sur la facture':'Montant total TTC de la facture',M,y);
   doc.setFont('helvetica','bold');doc.setTextColor(...NR);
   doc.text(FCFA(duFacture)+' F',W-M,y,{align:'right'});
   y+=6;
@@ -2445,7 +2451,15 @@ function calc(){
 }
 // partie commune aux deux modes : ticket, acompte, déduction, validité
 function calcTail(base){
-  const {t,total,qty}=base;
+  const {t,qty}=base;
+  const totalHT=base.total;
+  const tvaOn=isTvaOn();
+  const tva=tvaOn ? Math.round(totalHT*TVA_RATE) : 0;
+  const total=totalHT+tva;                 // montant TTC réclamé au client
+  document.getElementById('brk').insertAdjacentHTML('beforeend',
+    li('Total HT', FCFA(totalHT)+' F', false, null, 'step') +
+    (tvaOn ? li('TVA 18 %', '+'+FCFA(tva)+' F') : li('TVA', 'exonéré', false, null, 'mut')));
+  document.getElementById('tvaHint').textContent = tvaOn ? '+'+FCFA(tva)+' F' : 'document exonéré';
   const customLabelLive = (t.id==='custom') ? (document.getElementById('customLabel').value||'').trim() : '';
   document.getElementById('tName').textContent = customLabelLive || t.name;
   const totEl=document.getElementById('tot');
@@ -2485,7 +2499,7 @@ function calcTail(base){
   const validUntilEl=document.getElementById('validUntilText');
   if(validUntilEl) validUntilEl.innerHTML = validDays+' jours — valable jusqu\'au <b>'+untilStr+'</b>';
 
-  window._inv={...base,validDays,untilStr,docType:state.docType,
+  window._inv={...base,total,totalHT,tva,tvaRate:tvaOn?TVA_RATE:0,validDays,untilStr,docType:state.docType,
     dedOn:ded.on,dedAmount:ded.amount,dedLabel:ded.label,net};
 }
 function li(label,val,strong,note,cls){
@@ -2571,6 +2585,11 @@ function calcLibre(){
     baseUnit:0, subtotal, addSum:0, total:subtotal, unitsFactor:1, lines:lines.map(l=>({...l}))});
 }
 
+// ---- TVA (Sénégal : 18 %), les montants saisis sont HT ----
+const TVA_RATE=0.18;
+function isTvaOn(){ const el=document.getElementById('tvaOn'); return !el || el.checked; }
+function setTva(on){ const el=document.getElementById('tvaOn'); if(el) el.checked=!!on; calc(); }
+
 // ---- Signataire du document (par défaut Tanor Fall) ----
 const DEFAULT_ISSUER={name:'Tanor Fall', role:'Fondateur & Directeur Créatif'};
 function getIssuer(){
@@ -2646,6 +2665,7 @@ function buildSnapshot(){
     bonusDesc: bonusOpen ? (document.getElementById('bonusDesc').value||'').trim() : '',
     dedLabel: ded.on ? ded.label : '',
     dedAmount: ded.on ? ded.amount : 0,
+    tvaOn: isTvaOn(),
     issuerName: getIssuer().custom ? getIssuer().name : '',
     issuerRole: getIssuer().custom ? getIssuer().role : '',
   };
@@ -2682,6 +2702,7 @@ function applySnapshot(sn){
   }
   setDeduction(sn.dedLabel,sn.dedAmount||0);
   setIssuer(sn.issuerName||'', sn.issuerRole||'');
+  document.getElementById('tvaOn').checked = sn.tvaOn===true;
   state.lines=(sn.lines||[]).map(l=>({nm:l.nm||'',desc:l.desc||'',qty:l.qty||1,pu:l.pu||0}));
   setMode(sn.mode==='libre' ? 'libre' : 'calc');
 }
@@ -2722,6 +2743,7 @@ function exitEditMode(silent){
   window._sourceDocNum=null;
   updateEditBanner();
   regenNumber();
+  setTva(true);
   if(!silent) showToast('🆕 Nouveau document — numérotation repartie à neuf.');
 }
 function applyDocToForm(rec){
@@ -2754,6 +2776,7 @@ function duplicateDoc(invNum){
   const rec=docs.find(x=>x.invNum===invNum);
   if(!rec) return;
   applyDocToForm(rec);
+  document.getElementById('tvaOn').checked=true; // nouveau document : TVA 18 % par défaut
   window._editingDocNum=null;
   window._sourceDocNum=invNum;
   document.getElementById('invDate').value=new Date().toISOString().slice(0,10);
@@ -3049,8 +3072,9 @@ function generatePDF(){
     y+=S(3.5);
 
     // ---- TOTAUX ----
-    totalRow('Sous-total HT', FCFA(d.subtotal+d.addSum)+' FCFA');
-    totalRow('TVA (0%)', '—', {bold:false,color:GR});
+    totalRow('Total HT', FCFA(d.totalHT)+' FCFA');
+    if(d.tva>0) totalRow('TVA ('+Math.round(d.tvaRate*100)+'%)', FCFA(d.tva)+' FCFA');
+    else totalRow('TVA (0%)', 'Exonéré', {bold:false,color:GR});
     if(bonusOn) totalRow(bonusName+' (bonus)', 'OFFERTE', {color:GREEN});
     y+=S(2);
     bigTotal('MONTANT TOTAL TTC', FCFA(d.total)+' FCFA', V, O);
@@ -3175,7 +3199,7 @@ function generatePDF(){
   persistCurrentDoc({
     invNum, docType:d.docType, cName, cTel, cProj,
     typeName:displayTypeName, gName:d.gName, dName:d.dName, qty:d.qty,
-    total:d.total, validDays:d.validDays, untilStr:d.untilStr,
+    total:d.total, totalHT:d.totalHT, tva:d.tva, tvaRate:d.tvaRate, validDays:d.validDays, untilStr:d.untilStr,
     invDate: invDateRaw || new Date().toISOString().slice(0,10),
     snapshot: buildSnapshot(),
     dedAmount: ded.on ? ded.amount : 0,
