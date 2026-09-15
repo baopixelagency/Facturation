@@ -219,6 +219,22 @@
   .total .amt small{font-size:17px;color:var(--orange);font-weight:700}
   .total .sub{font-size:12px;color:var(--gris)}
   .split{display:flex;gap:9px;margin-top:11px}
+  .split{flex-wrap:wrap}
+  .split .s{min-width:calc(50% - 5px)}
+  .ph-presets{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
+  .ph-line{border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:9px;background:var(--card);transition:border-color var(--t)}
+  .ph-line:focus-within{border-color:var(--violet-l)}
+  .ph-line .top{display:grid;grid-template-columns:26px 1fr 84px 38px;gap:8px;align-items:center}
+  .ph-line .idx{font-family:'Archivo';font-weight:800;color:var(--violet);text-align:center}
+  .ph-line .pct-wrap{position:relative}
+  .ph-line .pct-wrap input{padding-right:24px;text-align:right;font-weight:700}
+  .ph-line .pct-wrap span{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--gris);font-weight:700;font-size:13px}
+  .ph-line .rm{border:none;background:#FBE5E5;color:#B33A3A;width:38px;height:40px;border-radius:9px;cursor:pointer;font-size:14px}
+  .ph-line .bottom{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:7px;align-items:center}
+  .ph-line .note{font-size:13px}
+  .ph-line .amt{font-family:'Archivo';font-weight:700;color:var(--violet);font-size:14px;white-space:nowrap;min-width:84px;text-align:right}
+  .ph-sum{display:flex;justify-content:space-between;align-items:baseline;padding:10px 4px 0;font-size:13px;font-weight:600}
+  .ph-sum.ok{color:var(--green)} .ph-sum.ko{color:#B33A3A}
   .split .s{flex:1;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:9px;text-align:center;transition:background-color var(--t),border-color var(--t)}
   .split .s .kk{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--gris-l);font-weight:600}
   .split .s .vv{font-family:'Archivo';font-weight:700;font-size:15px;color:var(--violet);margin-top:1px}
@@ -873,6 +889,21 @@
       </div>
       </div><!-- /calcCards -->
 
+      <!-- ÉCHÉANCIER -->
+      <div class="card" id="phasesCard">
+        <div class="step"><span class="n">%</span><h3>Échéancier de paiement</h3></div>
+        <div class="hint">Découpe le paiement en phases, avec une note pour chacune. Le total doit faire 100 %.</div>
+        <div class="ph-presets">
+          <button class="manage-btn" onclick="presetPhases('unique')">100 %</button>
+          <button class="manage-btn" onclick="presetPhases('50-50')">50 / 50</button>
+          <button class="manage-btn" onclick="presetPhases('30-40-30')">30 / 40 / 30</button>
+          <button class="manage-btn" onclick="presetPhases('25x4')">4 × 25 %</button>
+        </div>
+        <div id="phaseRows"></div>
+        <button class="add-addon-btn" onclick="addPhase()">➕ Ajouter une phase</button>
+        <div class="ph-sum" id="phaseSum"></div>
+      </div>
+
     </div>
 
     <!-- ============ TICKET ============ -->
@@ -899,8 +930,7 @@
             <div class="sub" id="perUnit"></div>
           </div>
           <div class="split" id="splitBox">
-            <div class="s"><div class="kk" id="accLbl">Acompte 50%</div><div class="vv" id="acc">0</div></div>
-            <div class="s"><div class="kk">Solde 50%</div><div class="vv" id="sol">0</div></div>
+
           </div>
           <div class="net-box" id="netBox" style="display:none">
             <div class="nb-ded"><span id="nbDedLbl">Déjà facturé</span><span id="nbDedVal">0 F</span></div>
@@ -1088,7 +1118,7 @@ const DEFAULT_ADDONS = [
   {id:'rush',  nm:'Livraison express des fichiers',pr:10000},
 ];
 
-let state = {type:'airbnb', gamme:'ess', delai:'norm', addons:new Set(), docType:'devis', mode:'calc', lines:[]};
+let state = {type:'airbnb', gamme:'ess', delai:'norm', addons:new Set(), docType:'devis', mode:'calc', lines:[], phases:defaultPhases()};
 
 // ---- Stockage local (classeur devis/factures + types récurrents + options) ----
 const STORAGE_KEY_DOCS='bp_docs_v1', STORAGE_KEY_TYPES='bp_custom_types_v1', STORAGE_KEY_ADDONS='bp_addons_v1';
@@ -1664,7 +1694,6 @@ function setDocType(type){
   document.getElementById('pdfHint').textContent = isDevis
     ? 'Devis aux couleurs BaoPixel, prêt à envoyer sur WhatsApp.'
     : 'Facture aux couleurs BaoPixel, prête à envoyer sur WhatsApp.';
-  document.getElementById('accLbl').textContent = isDevis ? 'Acompte prévu 50%' : 'Acompte 50%';
   document.getElementById('validBox').classList.toggle('show', isDevis);
   document.getElementById('convertBtn').style.display = isDevis ? 'block' : 'none';
   // régénère le n° de document avec le bon préfixe si l'utilisateur n'y a pas touché
@@ -1705,6 +1734,7 @@ function persistCurrentDoc(p){
   rec.typeName=p.typeName; rec.gName=p.gName; rec.dName=p.dName; rec.qty=p.qty;
   rec.total=p.total; rec.totalHT=p.totalHT; rec.tva=p.tva||0; rec.tvaRate=p.tvaRate||0; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
   rec.snapshot=p.snapshot;
+  rec.phases=p.phases||null;
   rec.issuer=p.issuer||null;
   rec.dedAmount=p.dedAmount||0; rec.dedLabel=p.dedLabel||''; rec.net=p.net;
   rec.revision=existing ? (existing.revision||1)+1 : 1;
@@ -1888,10 +1918,26 @@ function openRecuModal(invNum){
     <div class="ri-row"><span>${rec.dedAmount>0?'Net à payer':'Montant total TTC'}</span><b>${FCFA(du)} F</b></div>
     <div class="ri-row"><span>Déjà encaissé</span><b>${FCFA(encaisse)} F</b></div>
     <div class="ri-row total"><span>Reste dû</span><b>${FCFA(reste)} F</b></div>`;
-  document.getElementById('recuMontant').value=reste;
+  // prochaine échéance de l'échéancier (si le document en a un)
+  let proposition=reste, notePhase='';
+  if(Array.isArray(rec.phases) && rec.phases.length>1){
+    let cumul=0;
+    for(let i=0;i<rec.phases.length;i++){
+      const ph=rec.phases[i];
+      cumul+=ph.amount||0;
+      if(cumul>encaisse+0.5){
+        proposition=Math.min(reste,Math.round(cumul-encaisse));
+        notePhase='Phase '+(i+1)+' — '+(ph.label||'')+' ('+fmtPct(ph.pct)+' %)';
+        break;
+      }
+    }
+    if(notePhase) document.getElementById('recuInfo').insertAdjacentHTML('beforeend',
+      '<div class="ri-row"><span>Prochaine échéance</span><b>'+escHtml(notePhase)+'</b></div>');
+  }
+  document.getElementById('recuMontant').value=proposition;
   document.getElementById('recuMontant').max=reste;
   document.getElementById('recuDate').value=new Date().toISOString().slice(0,10);
-  document.getElementById('recuNote').value='';
+  document.getElementById('recuNote').value=notePhase;
   document.getElementById('modalBackdrop').classList.add('show');
 }
 function confirmRecu(){
@@ -2490,8 +2536,6 @@ function calcTail(base){
   }
   window._lastTotal=total;
   totEl.innerHTML=FCFA(total)+' <small>FCFA</small>';
-  document.getElementById('acc').textContent=FCFA(total/2);
-  document.getElementById('sol').textContent=FCFA(total/2);
   const pu = qty>1 ? ('≈ '+FCFA(total/qty)+' F / '+t.unit) : '';
   document.getElementById('perUnit').textContent=pu;
 
@@ -2502,14 +2546,18 @@ function calcTail(base){
   const splitBox=document.getElementById('splitBox');
   if(ded.on){
     netBox.style.display='block';
-    splitBox.style.display='none';
     document.getElementById('nbDedLbl').textContent=ded.label;
     document.getElementById('nbDedVal').textContent='- '+FCFA(ded.amount)+' F';
     document.getElementById('nbNet').textContent=FCFA(net)+' F';
   } else {
     netBox.style.display='none';
-    splitBox.style.display='flex';
   }
+  // ---- Échéancier : montants par phase, calculés sur ce qui reste dû ----
+  const phases=computePhases(ded.on ? net : total);
+  const pctSum=phasesPctTotal();
+  const phasesOk=Math.abs(pctSum-100)<0.01;
+  splitBox.innerHTML=phases.map((ph,i)=>'<div class="s"><div class="kk">'+escHtml(ph.label||('Phase '+(i+1)))+' · '+fmtPct(ph.pct)+'%</div><div class="vv">'+FCFA(ph.amount)+'</div></div>').join('');
+  paintPhaseAmounts(phases,pctSum,phasesOk);
 
   // ---- Validité (devis uniquement) ----
   const validDaysEl=document.getElementById('validDays');
@@ -2522,7 +2570,7 @@ function calcTail(base){
   if(validUntilEl) validUntilEl.innerHTML = validDays+' jours — valable jusqu\'au <b>'+untilStr+'</b>';
 
   window._inv={...base,total,totalHT,tva,tvaRate:tvaOn?TVA_RATE:0,validDays,untilStr,docType:state.docType,
-    dedOn:ded.on,dedAmount:ded.amount,dedLabel:ded.label,net};
+    dedOn:ded.on,dedAmount:ded.amount,dedLabel:ded.label,net,phases,phasesOk,pctSum};
 }
 function li(label,val,strong,note,cls){
   const c='l'+(cls==='mut'?' mut':'')+(cls==='step'?' step-line':'');
@@ -2849,6 +2897,64 @@ function generateAvoirPDF(av, fac){
   doc.save('Avoir_BaoPixel_'+(av.client.name||'Client').replace(/[^a-zA-Z0-9]/g,'_')+'_'+av.invNum+'.pdf');
 }
 
+// ---- Échéancier de paiement (phases en %, avec note) ----
+function defaultPhases(){
+  return [{label:'Acompte à la commande',pct:50,note:''},{label:'Solde à la livraison des fichiers finaux',pct:50,note:''}];
+}
+const PHASE_PRESETS={
+  'unique':()=>[{label:'Paiement unique',pct:100,note:''}],
+  '50-50':defaultPhases,
+  '30-40-30':()=>[{label:'Acompte au lancement',pct:30,note:''},{label:'Phase intermédiaire',pct:40,note:''},{label:'Solde à la livraison',pct:30,note:''}],
+  '25x4':()=>[{label:'Lancement du projet',pct:25,note:''},{label:'Phase 2',pct:25,note:''},{label:'Phase 3',pct:25,note:''},{label:'Livraison finale',pct:25,note:''}],
+};
+function fmtPct(p){ return (+p||0).toLocaleString('fr-FR',{maximumFractionDigits:2}); }
+function phasesPctTotal(){ return state.phases.reduce((t,p)=>t+(+p.pct||0),0); }
+// montants arrondis au franc ; l'écart d'arrondi est porté par la dernière phase
+function computePhases(base){
+  const out=state.phases.map(p=>({label:(p.label||'').trim(),pct:+p.pct||0,note:(p.note||'').trim(),amount:Math.round(base*(+p.pct||0)/100)}));
+  if(Math.abs(phasesPctTotal()-100)<0.01 && out.length){
+    const diff=Math.round(base)-out.reduce((t,p)=>t+p.amount,0);
+    for(let i=out.length-1;i>=0;i--){ if(out[i].pct>0){ out[i].amount+=diff; break; } }
+  }
+  return out;
+}
+function renderPhases(){
+  const box=document.getElementById('phaseRows');
+  if(!box) return;
+  box.innerHTML='';
+  state.phases.forEach((ph,i)=>{
+    const el=document.createElement('div');
+    el.className='ph-line';
+    el.innerHTML=
+      '<div class="top"><span class="idx">'+(i+1)+'</span>'+
+      '<input type="text" class="lbl-in" placeholder="Phase (ex : Lancement du projet)">'+
+      '<div class="pct-wrap"><input type="number" class="pct" min="0" max="100" step="1"><span>%</span></div>'+
+      '<button class="rm" title="Retirer cette phase">🗑</button></div>'+
+      '<div class="bottom"><input type="text" class="note" placeholder="Note de paiement (ex : à la validation des maquettes)"><span class="amt"></span></div>';
+    const q=sel=>el.querySelector(sel);
+    q('.lbl-in').value=ph.label||''; q('.pct').value=ph.pct; q('.note').value=ph.note||'';
+    const upd=()=>{ ph.label=q('.lbl-in').value; ph.pct=Math.max(0,+q('.pct').value||0); ph.note=q('.note').value; calc(); };
+    ['.lbl-in','.pct','.note'].forEach(sel=>q(sel).addEventListener('input',upd));
+    q('.rm').onclick=()=>{ state.phases.splice(i,1); if(!state.phases.length) state.phases=PHASE_PRESETS.unique(); renderPhases(); calc(); };
+    box.appendChild(el);
+  });
+}
+function paintPhaseAmounts(phases,pctSum,ok){
+  document.querySelectorAll('#phaseRows .ph-line').forEach((el,i)=>{ const a=el.querySelector('.amt'); if(a&&phases[i]) a.textContent=FCFA(phases[i].amount)+' F'; });
+  const sum=document.getElementById('phaseSum');
+  if(!sum) return;
+  sum.className='ph-sum '+(ok?'ok':'ko');
+  sum.innerHTML= ok ? '<span>✓ Total des phases</span><span>100 %</span>'
+                    : '<span>⚠️ Le total doit faire 100 %</span><span>'+fmtPct(pctSum)+' %</span>';
+}
+function presetPhases(key){ state.phases=(PHASE_PRESETS[key]||defaultPhases)(); renderPhases(); calc(); }
+function addPhase(){
+  const reste=Math.max(0,100-phasesPctTotal());
+  state.phases.push({label:'Phase '+(state.phases.length+1),pct:Math.round(reste*100)/100,note:''});
+  renderPhases(); calc();
+  const all=document.querySelectorAll('#phaseRows .lbl-in'); if(all.length){ all[all.length-1].focus(); all[all.length-1].select(); }
+}
+
 // ---- TVA (Sénégal : 18 %), les montants saisis sont HT ----
 const TVA_RATE=0.18;
 function isTvaOn(){ const el=document.getElementById('tvaOn'); return !!el && el.checked; }
@@ -2930,6 +3036,7 @@ function buildSnapshot(){
     dedLabel: ded.on ? ded.label : '',
     dedAmount: ded.on ? ded.amount : 0,
     tvaOn: isTvaOn(),
+    phases: state.phases.map(p=>({label:p.label||'',pct:+p.pct||0,note:p.note||''})),
     issuerName: getIssuer().custom ? getIssuer().name : '',
     issuerRole: getIssuer().custom ? getIssuer().role : '',
   };
@@ -2967,6 +3074,8 @@ function applySnapshot(sn){
   setDeduction(sn.dedLabel,sn.dedAmount||0);
   setIssuer(sn.issuerName||'', sn.issuerRole||'');
   document.getElementById('tvaOn').checked = sn.tvaOn===true;
+  state.phases = (Array.isArray(sn.phases) && sn.phases.length) ? sn.phases.map(p=>({label:p.label||'',pct:+p.pct||0,note:p.note||''})) : defaultPhases();
+  renderPhases();
   state.lines=(sn.lines||[]).map(l=>({nm:l.nm||'',desc:l.desc||'',qty:l.qty||1,pu:l.pu||0}));
   setMode(sn.mode==='libre' ? 'libre' : 'calc');
 }
@@ -3098,6 +3207,7 @@ function makePDF(){
 function generatePDF(){
   const inv=window._inv; if(!inv){calc();}
   const d=window._inv;
+  if(!d.phasesOk){ showToast('⚠️ L\'échéancier fait '+fmtPct(d.pctSum)+' % : ajuste les phases pour atteindre 100 %.'); return; }
   const cName=(document.getElementById('cName').value||'À définir').trim();
   const cTel=(document.getElementById('cTel').value||'').trim();
   const cProj=(document.getElementById('cProj').value||'').trim();
@@ -3393,14 +3503,28 @@ function generatePDF(){
 
     // ---- CONDITIONS DE RÈGLEMENT ----
     sectionHeading(isDevis ? 'CONDITIONS PRÉVUES' : 'CONDITIONS DE RÈGLEMENT');
-    const half=Math.round(d.total/2);
     if(ded.on){
       plainRow(stripEmoji(ded.label), '- '+FCFA(ded.amount)+' FCFA', GR);
       plainRow('Montant restant à régler', FCFA(netAPayer)+' FCFA');
-    } else {
-      plainRow(isDevis ? 'Acompte prévu à la commande (50%)' : 'Acompte à la confirmation (50%)', FCFA(half)+' FCFA');
-      plainRow('Solde à la livraison des fichiers finaux (50%)', FCFA(d.total-half)+' FCFA');
     }
+    // une ligne par phase : libellé, pourcentage, montant, puis la note de paiement
+    d.phases.forEach((ph,i)=>{
+      const label=(d.phases.length>1?'Phase '+(i+1)+' — ':'')+stripEmoji(ph.label||'Paiement')+' ('+fmtPct(ph.pct)+' %)';
+      doc.setFont('helvetica','italic');doc.setFontSize(F(7.8));
+      const noteLines=ph.note ? doc.splitTextToSize(stripEmoji(ph.note),W-2*M-50).slice(0,2) : [];
+      ensure(S(7)+noteLines.length*S(3.7));
+      doc.setFont('helvetica','normal');doc.setFontSize(F(9));doc.setTextColor(...NR);
+      doc.text(doc.splitTextToSize(label,W-2*M-45)[0],M,y);
+      doc.setFont('helvetica','bold');doc.setTextColor(...V);
+      doc.text(FCFA(ph.amount)+' FCFA',W-M,y,{align:'right'});
+      if(noteLines.length){
+        doc.setFont('helvetica','italic');doc.setFontSize(F(7.8));doc.setTextColor(...GR);
+        noteLines.forEach((l,k)=>doc.text(l,M+4,y+S(3.9)+k*S(3.7)));
+      }
+      const bottom=y+S(2)+noteLines.length*S(3.7);
+      doc.setDrawColor(...LN);doc.setLineWidth(.25);doc.line(M,bottom,W-M,bottom);
+      y=bottom+S(4);
+    });
     ensure(S(10));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.3));doc.setTextColor(...GR);
     doc.text('Modalités de paiement : Wave · Orange Money · Virement · Espèces  ·  Devise : franc CFA (XOF)',M,y+S(2));y+=S(6.3);
@@ -3510,6 +3634,7 @@ function generatePDF(){
     total:d.total, totalHT:d.totalHT, tva:d.tva, tvaRate:d.tvaRate, validDays:d.validDays, untilStr:d.untilStr,
     invDate: invDateRaw || new Date().toISOString().slice(0,10),
     snapshot: buildSnapshot(),
+    phases: d.phases,
     dedAmount: ded.on ? ded.amount : 0,
     dedLabel: ded.on ? ded.label : '',
     net: netAPayer,
@@ -3825,6 +3950,7 @@ async function initAuth(){
 
 // init
 function initApp(){
+  renderPhases();
   pickType('airbnb');
   setDocType('devis');
   calc();
