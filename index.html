@@ -959,6 +959,23 @@
             </div>
             <div class="fld" style="margin-top:8px"><input type="text" id="cAddr" placeholder="Adresse du client (optionnel)"></div>
             <div class="fld" style="margin-top:8px"><input type="text" id="cNinea" placeholder="NINEA du client — pour un client professionnel"></div>
+
+            <div class="bonus-toggle" id="intlToggle" style="display:flex;width:fit-content" onclick="toggleClientIntl()">🌍 Client international</div>
+            <div id="intlBox" style="display:none">
+              <div class="fld" style="margin-top:8px"><input type="text" id="cCountry" placeholder="Pays du client (ex : France)" oninput="calc()"></div>
+              <div class="row" style="margin-top:8px">
+                <div class="fld" style="max-width:150px">
+                  <select id="cIdType" onchange="calc()">
+                    <option value="SIRET">SIRET</option>
+                    <option value="N° TVA intracom.">N° TVA intracom.</option>
+                    <option value="RCS">RCS</option>
+                    <option value="Company reg. no.">Company reg. no.</option>
+                    <option value="Tax ID">Tax ID</option>
+                  </select>
+                </div>
+                <div class="fld"><input type="text" id="cIdValue" placeholder="Numéro d'identification du client" oninput="calc()"></div>
+              </div>
+            </div>
             <div class="fld" style="margin-top:8px"><input type="text" id="cProj" placeholder="Intitulé projet (optionnel)"></div>
 
             <span class="lbl" id="docDetailsLbl">Détails devis</span>
@@ -1729,7 +1746,8 @@ function persistCurrentDoc(p){
   rec.invNum=p.invNum; rec.docType=p.docType;
   rec.status = existing ? existing.status : (p.docType==='devis' ? 'envoye' : 'emise');
   if(p.docType==='facture' && rec.montantEncaisse===undefined) rec.montantEncaisse=0;
-  rec.client={name:p.cName, tel:p.cTel, proj:p.cProj, addr:p.cAddr||'', ninea:p.cNinea||''};
+  rec.client={name:p.cName, tel:p.cTel, proj:p.cProj, addr:p.cAddr||'', ninea:p.cNinea||'',
+    country:p.cCountry||'', idType:p.cIdType||'', idValue:p.cIdValue||''};
   rec.issueDate=(existing && existing.issueDate) || p.issueDate;
   rec.typeName=p.typeName; rec.gName=p.gName; rec.dName=p.dName; rec.qty=p.qty;
   rec.total=p.total; rec.totalHT=p.totalHT; rec.tva=p.tva||0; rec.tvaRate=p.tvaRate||0; rec.validDays=p.validDays; rec.untilStr=p.untilStr; rec.invDate=p.invDate;
@@ -2964,6 +2982,37 @@ const TVA_RATE=0.18;
 function isTvaOn(){ const el=document.getElementById('tvaOn'); return !!el && el.checked; }
 function setTva(on){ const el=document.getElementById('tvaOn'); if(el) el.checked=!!on; calc(); }
 
+// ---- Client international : pays + identifiant (SIRET, TVA intracom., etc.) ----
+function getClientIntl(){
+  const box=document.getElementById('intlBox');
+  const on = box && box.style.display!=='none';
+  if(!on) return {on:false, country:'', idType:'', idValue:''};
+  const country=(document.getElementById('cCountry').value||'').trim();
+  const idValue=(document.getElementById('cIdValue').value||'').trim();
+  const idType=document.getElementById('cIdType').value||'SIRET';
+  return {on: !!(country||idValue), country, idType, idValue};
+}
+function setClientIntl(country,idType,idValue){
+  const on=!!((country||'').trim()||(idValue||'').trim());
+  document.getElementById('intlBox').style.display = on ? 'block' : 'none';
+  document.getElementById('intlToggle').textContent = on ? '🌍 Retirer les informations internationales' : '🌍 Client international';
+  document.getElementById('cCountry').value = on ? (country||'') : '';
+  document.getElementById('cIdValue').value = on ? (idValue||'') : '';
+  const sel=document.getElementById('cIdType');
+  const val=idType||'SIRET';
+  if(![...sel.options].some(o=>o.value===val)) sel.add(new Option(val,val));
+  sel.value = on ? val : 'SIRET';
+}
+function toggleClientIntl(){
+  const box=document.getElementById('intlBox');
+  if(box.style.display==='none'){
+    box.style.display='block';
+    document.getElementById('intlToggle').textContent='🌍 Retirer les informations internationales';
+    document.getElementById('cCountry').focus();
+  } else setClientIntl('','','');
+  calc();
+}
+
 // ---- Signataire du document (par défaut Tanor Fall) ----
 const DEFAULT_ISSUER={name:'Tanor Fall', role:'Fondateur & Directeur Créatif'};
 function getIssuer(){
@@ -3131,6 +3180,7 @@ function applyDocToForm(rec){
   document.getElementById('cProj').value=rec.client.proj||'';
   document.getElementById('cAddr').value=rec.client.addr||'';
   document.getElementById('cNinea').value=rec.client.ninea||'';
+  setClientIntl(rec.client.country||'', rec.client.idType||'', rec.client.idValue||'');
   if(rec.validDays) document.getElementById('validDays').value=rec.validDays;
   setDocType(rec.docType);
 }
@@ -3221,6 +3271,8 @@ function generatePDF(){
   const displayTypeName = isLibre ? libreSummary() : (customLabel || d.t.name);
   const cAddr=(document.getElementById('cAddr').value||'').trim();
   const cNinea=(document.getElementById('cNinea').value||'').trim();
+  const intl=getClientIntl();
+  const cCountry=intl.country, cIdType=intl.on?intl.idType:'', cIdValue=intl.idValue;
   const docsNow=loadJSON(STORAGE_KEY_DOCS,[]);
   let editingRec = window._editingDocNum ? docsNow.find(x=>x.invNum===window._editingDocNum) : null;
   if(editingRec && editingRec.docType!==d.docType){
@@ -3235,7 +3287,8 @@ function generatePDF(){
     invNum=editingRec.invNum;
     if(editingRec.docType==='facture'){
       const changed = Math.round(d.total)!==Math.round(editingRec.total)
-        || cName!==(editingRec.client.name||'') || cAddr!==(editingRec.client.addr||'') || cNinea!==(editingRec.client.ninea||'');
+        || cName!==(editingRec.client.name||'') || cAddr!==(editingRec.client.addr||'') || cNinea!==(editingRec.client.ninea||'')
+        || cCountry!==(editingRec.client.country||'') || cIdValue!==(editingRec.client.idValue||'');
       if(changed){
         showToast('🔒 '+invNum+' est une facture émise : elle ne peut plus être modifiée. Crée un avoir puis duplique-la pour la corriger.');
         return;
@@ -3361,7 +3414,9 @@ function generatePDF(){
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.1));doc.setTextColor(80,80,80);
     const clLines=[];
     if(cAddr) clLines.push(...doc.splitTextToSize(stripEmoji(cAddr),52).slice(0,2));
+    if(cCountry) clLines.push(stripEmoji(cCountry));
     if(cNinea) clLines.push('NINEA : '+stripEmoji(cNinea));
+    if(cIdValue) clLines.push(stripEmoji((cIdType||'Identifiant')+' : '+cIdValue));
     if(cTel) clLines.push(cTel);
     if(cProj) clLines.push(...doc.splitTextToSize(stripEmoji(cProj),52).slice(0,2));
     clLines.slice(0,7-cNameLines.length).forEach((l,i)=>doc.text(l,col2X,clY+i*LH));
@@ -3639,6 +3694,7 @@ function generatePDF(){
     total:d.total, totalHT:d.totalHT, tva:d.tva, tvaRate:d.tvaRate, validDays:d.validDays, untilStr:d.untilStr,
     invDate: invDateRaw || new Date().toISOString().slice(0,10),
     snapshot: buildSnapshot(),
+    cCountry, cIdType, cIdValue,
     phases: d.phases,
     dedAmount: ded.on ? ded.amount : 0,
     dedLabel: ded.on ? ded.label : '',
