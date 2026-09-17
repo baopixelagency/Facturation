@@ -3418,7 +3418,6 @@ function generatePDF(){
     if(cNinea) clLines.push('NINEA : '+stripEmoji(cNinea));
     if(cIdValue) clLines.push(stripEmoji((cIdType||'Identifiant')+' : '+cIdValue));
     if(cTel) clLines.push(cTel);
-    if(cProj) clLines.push(...doc.splitTextToSize(stripEmoji(cProj),52).slice(0,2));
     clLines.slice(0,7-cNameLines.length).forEach((l,i)=>doc.text(l,col2X,clY+i*LH));
 
     doc.setFontSize(F(8.3));doc.setTextColor(...NR);doc.setFont('helvetica','bold');
@@ -3439,7 +3438,7 @@ function generatePDF(){
     // ---- OBJET ----
     const objetText = isLibre
       ? (cProj || libreLines.map(l=>(l.nm||'').trim()).filter(Boolean).join(' · ') || 'Prestations')+(bonusOn?' + '+bonusName+' offert':'')
-      : (customLabel ? 'Prestation — '+customLabel : (d.t.objet||d.t.name))+' · Pack '+d.gName+(bonusOn?' + '+bonusName+' offert':'');
+      : (customLabel ? 'Prestation — '+customLabel : (d.t.objet||d.t.name))+' · Pack '+d.gName+(cProj?' — '+cProj:'')+(bonusOn?' + '+bonusName+' offert':'');
     doc.setFontSize(F(8.7));
     const objetLines=doc.splitTextToSize(objetText,W-2*M-38);
     const objetH=Math.max(S(8.5),S(3)+objetLines.length*S(4.1));
