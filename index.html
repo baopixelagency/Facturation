@@ -967,7 +967,7 @@
               <div class="fld"><input type="date" id="invDate"></div>
             </div>
 
-            <label class="tva-row"><input type="checkbox" id="tvaOn" onchange="calc()"> Appliquer la TVA 18 % <small id="tvaHint">non applicable</small></label>
+            <label class="tva-row"><input type="checkbox" id="tvaOn" onchange="calc()"> Appliquer la TVA 18 % <small id="tvaHint">TVA non applicable</small></label>
 
             <div class="bonus-toggle" id="issuerToggle" style="display:flex;width:fit-content" onclick="toggleIssuer()">✍️ Émettre au nom d'une autre personne</div>
             <div id="issuerBox" style="display:none">
@@ -2526,8 +2526,8 @@ function calcTail(base){
   const total=totalHT+tva;                 // montant TTC réclamé au client
   document.getElementById('brk').insertAdjacentHTML('beforeend',
     li('Total HT', FCFA(totalHT)+' F', false, null, 'step') +
-    (tvaOn ? li('TVA 18 %', '+'+FCFA(tva)+' F') : li('TVA', 'non applicable', false, null, 'mut')));
-  document.getElementById('tvaHint').textContent = tvaOn ? '+'+FCFA(tva)+' F' : 'non applicable';
+    (tvaOn ? li('TVA 18 %', '+'+FCFA(tva)+' F') : li('TVA non applicable', '—', false, null, 'mut')));
+  document.getElementById('tvaHint').textContent = tvaOn ? '+'+FCFA(tva)+' F' : 'TVA non applicable';
   const customLabelLive = (t.id==='custom') ? (document.getElementById('customLabel').value||'').trim() : '';
   document.getElementById('tName').textContent = customLabelLive || t.name;
   const totEl=document.getElementById('tot');
@@ -2852,7 +2852,7 @@ function generateAvoirPDF(av, fac){
   };
   row('Total HT','- '+FCFA(av.totalHT)+' FCFA');
   if(av.tva>0) row('TVA ('+Math.round((av.tvaRate||0)*100)+'%)','- '+FCFA(av.tva)+' FCFA');
-  else row('TVA','Non applicable',GR);
+  else row('TVA non applicable','—',GR);
   y+=2;
   doc.setFillColor(...V);doc.rect(M,y-2,W-2*M,10.5,'F');
   doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(10.5);
@@ -2865,6 +2865,10 @@ function generateAvoirPDF(av, fac){
   doc.splitTextToSize('Arrêté le présent avoir à la somme de : '+montantEnLettres(av.total)+' ('+FCFA(av.total)+' FCFA).',W-2*M)
     .forEach(l=>{ doc.text(l,M,y); y+=4.4; });
   y+=2;
+  if(!(av.tva>0)){
+    doc.setFont('helvetica','normal');doc.setFontSize(8.2);doc.setTextColor(...GR);
+    doc.text('TVA non applicable — entreprise non assujettie à la TVA.',M,y); y+=5;
+  }
   if((fac.montantEncaisse||0)>0){
     doc.setFont('helvetica','italic');doc.setFontSize(8.2);doc.setTextColor(...GR);
     doc.splitTextToSize('La facture d\'origine avait reçu '+FCFA(fac.montantEncaisse)+' FCFA de paiement. Ce montant fera l\'objet d\'un remboursement ou sera repris sur la facture corrigée.',W-2*M)
@@ -3483,7 +3487,7 @@ function generatePDF(){
     // ---- TOTAUX ----
     totalRow('Total HT', FCFA(d.totalHT)+' FCFA');
     if(d.tva>0) totalRow('TVA ('+Math.round(d.tvaRate*100)+'%)', FCFA(d.tva)+' FCFA');
-    else totalRow('TVA', 'Non applicable', {bold:false,color:GR});
+    else totalRow('TVA non applicable', '—', {bold:false,color:GR});
     if(bonusOn) totalRow(bonusName+' (bonus)', 'OFFERTE', {color:GREEN});
     y+=S(2);
     bigTotal('MONTANT TOTAL TTC', FCFA(d.total)+' FCFA', V, O);
@@ -3528,6 +3532,7 @@ function generatePDF(){
     ensure(S(10));
     doc.setFont('helvetica','normal');doc.setFontSize(F(8.3));doc.setTextColor(...GR);
     doc.text('Modalités de paiement : Wave · Orange Money · Virement · Espèces  ·  Devise : franc CFA (XOF)',M,y+S(2));y+=S(6.3);
+    if(!(d.tva>0)){ doc.text('TVA non applicable — entreprise non assujettie à la TVA.',M,y);y+=S(4.3); }
     if(COMPANY.bank){ doc.text(doc.splitTextToSize('Coordonnées bancaires : '+COMPANY.bank,W-2*M)[0],M,y);y+=S(4.3); }
     if(!isDevis){ doc.text('Paiement à réception de la facture. Tout retard de paiement pourra donner lieu à des pénalités.',M,y);y+=S(4.3); }
     if(!isLibre){ doc.text('Délai de livraison : '+(d.t.delivery||'à convenir'),M,y);y+=S(4.3); }
