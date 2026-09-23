@@ -221,6 +221,15 @@
   .split{display:flex;gap:9px;margin-top:11px}
   .split{flex-wrap:wrap}
   .split .s{min-width:calc(50% - 5px)}
+  .clot-box{border:1.5px solid var(--line);border-radius:14px;padding:14px;margin-bottom:16px;background:var(--card)}
+  .clot-box .ct{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+  .clot-box .cs{font-size:12.5px;color:var(--gris);margin-top:5px;line-height:1.5}
+  .clot-box .ca{margin-top:11px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .clot-btn{border:none;background:var(--violet);color:#fff;font-family:'Archivo';font-weight:700;font-size:13px;padding:9px 14px;border-radius:10px;cursor:pointer}
+  .clot-btn:hover{background:var(--violet-d)}
+  .clot-btn[disabled]{background:var(--line);color:var(--gris-l);cursor:not-allowed}
+  .clot-tag{font-size:11.5px;font-weight:700;padding:4px 9px;border-radius:999px;background:var(--violet-ll);color:var(--violet)}
+  .row-rev{color:#B33A3A;font-weight:600}
   .ph-presets{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px}
   .ph-line{border:1.5px solid var(--line);border-radius:12px;padding:10px;margin-bottom:9px;background:var(--card);transition:border-color var(--t)}
   .ph-line:focus-within{border-color:var(--violet-l)}
@@ -256,6 +265,8 @@
   .tva-row{display:flex;align-items:center;gap:9px;margin-top:12px;padding:9px 11px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;color:var(--noir);background:var(--card)}
   .tva-row input{width:17px;height:17px;accent-color:var(--violet);cursor:pointer;flex:none}
   .tva-row small{margin-left:auto;font-weight:500;color:var(--gris-l);font-size:11.5px}
+  .client-pick{margin-bottom:8px}
+  .client-pick select{font-weight:600}
   .client-mini{margin-top:6px}
   .client-mini .lbl{margin-top:14px}
   .bonus-toggle{margin-top:12px;font-size:12.5px;font-weight:600;color:var(--violet);cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:opacity .15s}
@@ -730,6 +741,8 @@
 
       <div class="solde-hero" id="soldeHero"></div>
 
+      <div class="clot-box" id="clotureBox"></div>
+
       <button class="btn btn-pdf" id="rapportBtn" onclick="makeRapportPDF()" style="margin-bottom:16px">
         <span class="spin"></span><span class="lbl">📄 Générer le rapport comptable PDF</span>
       </button>
@@ -767,7 +780,7 @@
       <div class="classeur-table-wrap">
         <table class="classeur-table">
           <thead>
-            <tr><th>Date</th><th>Type</th><th>Libellé</th><th>Compte</th><th>Mode</th><th>Entrée</th><th>Sortie</th><th>Solde</th></tr>
+            <tr><th>Date</th><th>Type</th><th>Libellé</th><th>Compte</th><th>Mode</th><th>Entrée</th><th>Sortie</th><th>Solde</th><th>Actions</th></tr>
           </thead>
           <tbody id="journalBody"></tbody>
         </table>
@@ -953,7 +966,11 @@
 
           <div class="client-mini">
             <span class="lbl" id="clientLbl">Client (pour le devis)</span>
-            <div class="fld" style="margin-bottom:8px"><input type="text" id="cName" placeholder="Nom du client" oninput="syncBtn()"></div>
+            <div class="fld client-pick" id="clientPickWrap" style="display:none">
+              <select id="clientPicker" onchange="applyClientFromPicker()"></select>
+            </div>
+            <div class="fld" style="margin-bottom:8px"><input type="text" id="cName" placeholder="Nom du client" list="clientsList" oninput="syncBtn()"></div>
+            <datalist id="clientsList"></datalist>
             <div class="row">
               <div class="fld"><input type="tel" id="cTel" placeholder="Téléphone"></div>
             </div>
@@ -1139,6 +1156,12 @@ let state = {type:'airbnb', gamme:'ess', delai:'norm', addons:new Set(), docType
 
 // ---- Stockage local (classeur devis/factures + types récurrents + options) ----
 const STORAGE_KEY_DOCS='bp_docs_v1', STORAGE_KEY_TYPES='bp_custom_types_v1', STORAGE_KEY_ADDONS='bp_addons_v1';
+// identifiant technique, distinct du numéro lisible : il survit à une saisie simultanée
+// sur deux appareils et sert de clé de fusion lors de la synchronisation
+function newUid(){
+  try{ if(crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(e){}
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+}
 function loadJSON(key,fallback){
   try{ const raw=localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
   catch(e){ console.error('Erreur lecture stockage',key,e); return fallback; }
@@ -1254,9 +1277,87 @@ function deleteAddon(id){
   ADDONS=ADDONS.filter(x=>x.id!==id);
   state.addons.delete(id);
   persistAddons();
+  markDeleted(STORAGE_KEY_ADDONS,id);
   renderAddons();
   calc();
   showToast('🗑 Option supprimée.');
+}
+
+// ==================== CLÔTURE DES ÉCRITURES ====================
+// AUDCIF art. 22 : les écritures d'une période validée ne peuvent plus être supprimées,
+// ajoutées ni modifiées ; art. 20 : une erreur se corrige par inscription en négatif
+// (contre-passation), jamais par effacement.
+const STORAGE_KEY_CLOTURE='bp_cloture_v1', STORAGE_KEY_RAPPORTS='bp_rapports_v1';
+function getCloture(){ return loadJSON(STORAGE_KEY_CLOTURE,{lastClosed:null,history:[]}); }
+function saveCloture(c){ saveJSON(STORAGE_KEY_CLOTURE,c); }
+function monthEnd(month){ const [Y,M]=month.split('-').map(Number); return new Date(Y,M,0); }
+// fin de mois au format AAAA-MM-JJ, sans passer par un fuseau horaire
+function monthEndStr(month){ const [Y,M]=month.split('-').map(Number); return month+'-'+String(new Date(Y,M,0).getDate()).padStart(2,'0'); }
+function monthLabel(month){
+  const [Y,M]=month.split('-').map(Number);
+  const raw=new Date(Y,M-1,1).toLocaleDateString('fr-FR',{month:'long',year:'numeric'});
+  return raw.charAt(0).toUpperCase()+raw.slice(1);
+}
+function addMonth(month,delta){
+  const [Y,M]=month.split('-').map(Number);
+  const d=new Date(Y,M-1+delta,1);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function currentMonth(){ const n=new Date(); return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0'); }
+// une date tombe-t-elle dans une période déjà clôturée ?
+function isDateClosed(dateStr){
+  const c=getCloture();
+  if(!c.lastClosed || !dateStr) return false;
+  return dateStr.slice(0,10) <= monthEndStr(c.lastClosed);
+}
+// premier jour de la période encore ouverte (art. 22-4° : une opération dont la date de valeur
+// tombe dans une période close est enregistrée au premier jour de la période non clôturée)
+function firstOpenDay(){
+  const c=getCloture();
+  if(!c.lastClosed) return null;
+  const nextM=addMonth(c.lastClosed,1);
+  return nextM+'-01';
+}
+// mois qui peut être clôturé maintenant : le suivant du dernier clos, et seulement s'il est terminé
+function nextClosableMonth(){
+  const c=getCloture();
+  const ops=computeJournalOps();
+  let candidate;
+  if(c.lastClosed) candidate=addMonth(c.lastClosed,1);
+  else if(ops.length) candidate=ops[0].date.slice(0,7);
+  else candidate=addMonth(currentMonth(),-1);
+  return candidate < currentMonth() ? candidate : null;
+}
+function closeMonth(){
+  const month=nextClosableMonth();
+  if(!month){ showToast('⚠️ Le mois en cours ne peut pas être clôturé avant sa fin.'); return; }
+  const ops=computeJournalOps().filter(o=>o.date.slice(0,7)===month);
+  const totalIn=ops.filter(o=>o.type==='in').reduce((t,o)=>t+o.montant,0);
+  const totalOut=ops.filter(o=>o.type==='out').reduce((t,o)=>t+o.montant,0);
+  const solde=ops.length?ops[ops.length-1].solde:(computeJournalOps().filter(o=>o.date.slice(0,7)<month).pop()||{solde:0}).solde;
+  if(!confirm('Clôturer '+monthLabel(month)+' ?\n\n'+ops.length+' opération(s) · encaissements '+FCFA(totalIn)+' F · décaissements '+FCFA(totalOut)+' F\n\nAprès clôture, ces écritures ne peuvent plus être modifiées ni supprimées : toute correction se fera par contre-passation. Cette opération est définitive.')) return;
+  const c=getCloture();
+  c.lastClosed=month;
+  c.history=[...(c.history||[]), {month, closedAt:new Date().toISOString(), nbOps:ops.length, totalIn, totalOut, solde}];
+  saveCloture(c);
+  renderJournal(); renderExpenses();
+  showToast('🔒 '+monthLabel(month)+' clôturé — '+ops.length+' écriture(s) figée(s).');
+}
+function renderCloture(){
+  const box=document.getElementById('clotureBox');
+  if(!box) return;
+  const c=getCloture();
+  const next=nextClosableMonth();
+  const closedTxt = c.lastClosed
+    ? 'Écritures figées jusqu\'au <b>'+monthEnd(c.lastClosed).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})+'</b>.'
+    : 'Aucune période clôturée pour l\'instant.';
+  box.innerHTML='<div class="ct">🔒 Clôture des écritures'+(c.lastClosed?' <span class="clot-tag">'+monthLabel(c.lastClosed)+' clos</span>':'')+'</div>'+
+    '<div class="cs">'+closedTxt+' Une période clôturée ne peut plus être modifiée : les corrections se font par contre-passation (OHADA, articles 20 et 22).</div>'+
+    '<div class="ca">'+
+      (next ? '<button class="clot-btn" onclick="closeMonth()">Clôturer '+monthLabel(next)+'</button>'
+            : '<button class="clot-btn" disabled>Rien à clôturer pour le moment</button>')+
+      (next ? '<span class="cs" style="margin:0">Le mois en cours reste modifiable jusqu\'à sa clôture.</span>' : '')+
+    '</div>';
 }
 
 // ==================== DÉPENSES DE TOURNAGE ====================
@@ -1419,7 +1520,17 @@ function renderDashboard(){
 
 // ==================== SAUVEGARDE / RESTAURATION ====================
 const STORAGE_KEY_LAST_BACKUP='bp_last_backup_v1';
-const BACKUP_KEYS=['bp_docs_v1','bp_custom_types_v1','bp_addons_v1','bp_expenses_v1','bp_expense_cats_v1','bp_recus_v1'];
+const STORAGE_KEY_DELETED='bp_deleted_v1';
+const BACKUP_KEYS=['bp_docs_v1','bp_custom_types_v1','bp_addons_v1','bp_expenses_v1','bp_expense_cats_v1','bp_recus_v1','bp_cloture_v1','bp_rapports_v1','bp_deleted_v1'];
+// une suppression est elle aussi une information à synchroniser : sans trace, l'enregistrement
+// supprimé ici réapparaîtrait à la prochaine fusion avec l'autre appareil
+function getTombstones(){ const t=loadJSON(STORAGE_KEY_DELETED,{}); return (t && typeof t==='object' && !Array.isArray(t)) ? t : {}; }
+function markDeleted(key,id){
+  if(!id) return;
+  const t=getTombstones();
+  t[key]={...(t[key]||{}), [id]:new Date().toISOString()};
+  saveJSON(STORAGE_KEY_DELETED,t);
+}
 
 function renderBackupStatus(){
   const lastBackup=localStorage.getItem(STORAGE_KEY_LAST_BACKUP);
@@ -1548,24 +1659,40 @@ function deleteCategory(id){
   if(!confirm('Supprimer la catégorie "'+c.nm+'" ? Les dépenses déjà enregistrées avec cette catégorie resteront visibles.')) return;
   EXP_CATS=EXP_CATS.filter(x=>x.id!==id);
   saveJSON(STORAGE_KEY_EXP_CATS,EXP_CATS);
+  markDeleted(STORAGE_KEY_EXP_CATS,id);
   renderCatManager(); renderExpCatSelect(); renderExpenses();
   showToast('🗑 Catégorie supprimée.');
 }
 function catInfo(id){
   return EXP_CATS.find(c=>c.id===id) || {ic:'❓', nm:'Catégorie supprimée', compte:''};
 }
+function nextExpenseNumber(){
+  const year=String(new Date().getFullYear());
+  const re=/^DEP-(\d{4})-(\d{4,})$/;
+  const max=loadJSON(STORAGE_KEY_EXPENSES,[]).reduce((m,x)=>{ const k=re.exec(x.num||''); return (k&&k[1]===year)?Math.max(m,+k[2]):m; },0);
+  return 'DEP-'+year+'-'+String(max+1).padStart(4,'0');
+}
 function addExpense(){
-  const date=document.getElementById('expDate').value || new Date().toISOString().slice(0,10);
+  let date=document.getElementById('expDate').value || new Date().toISOString().slice(0,10);
+  let dateValeur='';
+  if(isDateClosed(date)){
+    const open=firstOpenDay();
+    if(!confirm('Le '+new Date(date+'T00:00:00').toLocaleDateString('fr-FR')+' appartient à une période déjà clôturée.\n\nCette dépense sera enregistrée au '+new Date(open+'T00:00:00').toLocaleDateString('fr-FR')+' (premier jour de la période ouverte), avec mention de sa date de valeur d\'origine. Continuer ?')) return;
+    dateValeur=date;
+    date=open;
+  }
   const catId=document.getElementById('expCat').value;
   const montant=Math.max(0,+document.getElementById('expMontant').value||0);
   const mode=document.getElementById('expMode').value;
   const projet=document.getElementById('expProjet').value.trim();
   const note=document.getElementById('expNote').value.trim();
   if(montant<=0){ showToast('⚠️ Indique un montant valide.'); return; }
+  if(!EXP_CATS.find(c=>c.id===catId)){ showToast('⚠️ Choisis une catégorie de charge.'); return; }
   const cat=catInfo(catId);
   // le compte (et le nom de catégorie) sont figés au moment de l'enregistrement :
   // si la catégorie est renommée ou son compte changé plus tard, cette dépense garde sa valeur d'origine
-  const rec={id:'EXP-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,5).toUpperCase(),
+  const rec={id:'EXP-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,5).toUpperCase(), uid:newUid(),
+    num:nextExpenseNumber(), dateValeur,
     date, catId, montant, mode, projet, note, createdAt:new Date().toISOString(),
     compte:cat.compte||'', catNameSnapshot:cat.nm, catIcSnapshot:cat.ic};
   const list=loadJSON(STORAGE_KEY_EXPENSES,[]);
@@ -1578,11 +1705,44 @@ function addExpense(){
   showToast('💸 Dépense de '+FCFA(montant)+' F enregistrée — compte '+(cat.compte||'non défini')+' alloué.');
 }
 function deleteExpense(id){
-  if(!confirm('Supprimer cette dépense ?')) return;
-  let list=loadJSON(STORAGE_KEY_EXPENSES,[]);
-  list=list.filter(x=>x.id!==id);
-  saveJSON(STORAGE_KEY_EXPENSES,list);
+  const list=loadJSON(STORAGE_KEY_EXPENSES,[]);
+  const rec=list.find(x=>x.id===id);
+  if(!rec) return;
+  if(isDateClosed(rec.date)){
+    showToast('🔒 Période clôturée : cette dépense ne peut plus être supprimée. Utilise « Contre-passer ».');
+    return;
+  }
+  if(rec.reversalOf || rec.reversedBy){
+    showToast('🔒 Une écriture de contre-passation ne se supprime pas.');
+    return;
+  }
+  if(!confirm('Supprimer cette dépense ?\n\nElle n\'est pas encore clôturée, la suppression est donc possible. Après clôture, seule la contre-passation le sera.')) return;
+  saveJSON(STORAGE_KEY_EXPENSES, list.filter(x=>x.id!==id));
+  markDeleted(STORAGE_KEY_EXPENSES, rec.uid||rec.id);
   renderExpenses();
+}
+// contre-passation : écriture de sens inverse, l'originale reste au journal (art. 20)
+function reverseExpense(id){
+  const list=loadJSON(STORAGE_KEY_EXPENSES,[]);
+  const rec=list.find(x=>x.id===id);
+  if(!rec) return;
+  if(rec.reversedBy){ showToast('Cette dépense a déjà été contre-passée.'); return; }
+  if(rec.reversalOf){ showToast('Une contre-passation ne se contre-passe pas.'); return; }
+  const motif=prompt('Contre-passer '+(rec.num||'cette dépense')+' de '+FCFA(rec.montant)+' F\n\nMotif de la correction :','Erreur de saisie');
+  if(motif===null) return;
+  const today=new Date().toISOString().slice(0,10);
+  const date=isDateClosed(today) ? firstOpenDay() : today;
+  const rev={id:'EXP-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,5).toUpperCase(), uid:newUid(),
+    num:nextExpenseNumber(), date, dateValeur:'',
+    catId:rec.catId, montant:-rec.montant, mode:rec.mode, projet:rec.projet||'',
+    note:'Contre-passation de '+(rec.num||'écriture')+(motif?' — '+motif.trim():''),
+    createdAt:new Date().toISOString(), compte:rec.compte||'', catNameSnapshot:rec.catNameSnapshot, catIcSnapshot:rec.catIcSnapshot,
+    reversalOf:rec.id, motif:(motif||'').trim()};
+  rec.reversedBy=rev.id;
+  list.push(rev);
+  saveJSON(STORAGE_KEY_EXPENSES,list);
+  renderExpenses(); if(document.getElementById('journalBody')) renderJournal();
+  showToast('↩️ '+rev.num+' — contre-passation de '+FCFA(rec.montant)+' F enregistrée.');
 }
 function setExpPeriod(p){
   window._expPeriod=p;
@@ -1629,10 +1789,18 @@ function renderExpenses(){
     const nm = hasSnapshot ? r.catNameSnapshot : catInfo(r.catId).nm;
     const compte = hasSnapshot ? r.compte : catInfo(r.catId).compte;
     const dateStr=new Date(r.date+'T00:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
-    return `<tr><td>${dateStr}</td><td><span class="cat-badge">${ic} ${nm}</span>${compte?`<br><small style="color:var(--gris-l)">cpt ${compte}</small>`:''}</td>`+
-           `<td><b>${FCFA(r.montant)} F</b></td><td>${modeLabels[r.mode]||r.mode}</td>`+
+    const closed=isDateClosed(r.date);
+    const isRev=!!r.reversalOf;
+    let actions='';
+    if(isRev || r.reversedBy){ actions='<span class="clot-tag">'+(isRev?'contre-passation':'contre-passée')+'</span>'; }
+    else if(closed){ actions=`<button class="ra-btn" onclick="reverseExpense('${r.id}')" title="Période clôturée : corriger par écriture inverse">↩️ Contre-passer</button>`; }
+    else { actions=`<button class="ra-btn" onclick="reverseExpense('${r.id}')" title="Corriger par écriture inverse">↩️ Contre-passer</button><button class="ra-btn danger" onclick="deleteExpense('${r.id}')">🗑</button>`; }
+    const montantTxt = r.montant<0 ? '('+FCFA(Math.abs(r.montant))+') F' : FCFA(r.montant)+' F';
+    return `<tr><td>${dateStr}${r.num?`<br><small style="color:var(--gris-l)">${r.num}</small>`:''}${closed?' 🔒':''}${r.dateValeur?`<br><small style="color:var(--orange)">valeur ${new Date(r.dateValeur+'T00:00:00').toLocaleDateString('fr-FR')}</small>`:''}</td>`+
+           `<td><span class="cat-badge">${ic} ${nm}</span>${compte?`<br><small style="color:var(--gris-l)">cpt ${compte}</small>`:''}</td>`+
+           `<td><b${r.montant<0?' class="row-rev"':''}>${montantTxt}</b></td><td>${modeLabels[r.mode]||r.mode}</td>`+
            `<td>${r.projet||'—'}</td><td>${r.note||'—'}</td>`+
-           `<td><div class="row-actions"><button class="ra-btn danger" onclick="deleteExpense('${r.id}')">🗑</button></div></td></tr>`;
+           `<td><div class="row-actions">${actions}</div></td></tr>`;
   }).join('');
 }
 
@@ -1742,7 +1910,7 @@ function persistCurrentDoc(p){
   const docs=loadJSON(STORAGE_KEY_DOCS,[]);
   const existing=docs.find(x=>x.invNum===p.invNum);
   if(existing && existing.docType!=='devis'){ showToast('🔒 '+p.invNum+' est déjà émise : elle ne peut pas être modifiée.'); return; }
-  const rec=existing || {id:p.invNum, createdAt:new Date().toISOString(), linkedDevisNum:null, linkedFactureNum:null, montantEncaisse:0};
+  const rec=existing || {id:p.invNum, uid:newUid(), createdAt:new Date().toISOString(), linkedDevisNum:null, linkedFactureNum:null, montantEncaisse:0};
   rec.invNum=p.invNum; rec.docType=p.docType;
   rec.status = existing ? existing.status : (p.docType==='devis' ? 'envoye' : 'emise');
   if(p.docType==='facture' && rec.montantEncaisse===undefined) rec.montantEncaisse=0;
@@ -1774,6 +1942,7 @@ function persistCurrentDoc(p){
   if(!existing) docs.push(rec);
   saveJSON(STORAGE_KEY_DOCS,docs);
   renderClasseur();
+  renderClientPicker(); // un nouveau client entre au répertoire
   const kind = p.docType==='devis'?'Devis ':'Facture ';
   if(existing){
     window._editingDocNum=p.invNum;
@@ -1905,6 +2074,7 @@ function deleteDoc(invNum){
   let docs=loadJSON(STORAGE_KEY_DOCS,[]);
   docs=docs.filter(x=>x.invNum!==invNum);
   saveJSON(STORAGE_KEY_DOCS,docs);
+  markDeleted(STORAGE_KEY_DOCS, (target&&(target.uid||target.id))||invNum);
   renderClasseur();
 }
 
@@ -1983,7 +2153,7 @@ function confirmRecu(){
   saveJSON(STORAGE_KEY_DOCS,docs);
 
   // enregistre le reçu
-  const recuRec={id:recuNum, recuNum, invNum, client:{...rec.client}, montant, mode, date, note,
+  const recuRec={id:recuNum, uid:newUid(), recuNum, invNum, client:{...rec.client}, montant, mode, date, note,
     resteApres:Math.max(0,du-rec.montantEncaisse), montantDu:du, soldee, createdAt:new Date().toISOString()};
   const recus=loadJSON(STORAGE_KEY_RECUS,[]);
   recus.push(recuRec);
@@ -1993,6 +2163,39 @@ function confirmRecu(){
   closeModal();
   renderClasseur();
   showToast('🧾 Reçu '+recuNum+' généré — '+(soldee?'facture soldée ✓':'reste '+FCFA(recuRec.resteApres)+' F'));
+}
+
+// annulation d'un encaissement : reçu de sens inverse (remboursement ou erreur de saisie)
+function reverseRecu(recuNum){
+  const recus=loadJSON(STORAGE_KEY_RECUS,[]);
+  const src=recus.find(r=>r.recuNum===recuNum);
+  if(!src){ showToast('Reçu introuvable.'); return; }
+  if(src.reversedBy){ showToast('Ce reçu a déjà été contre-passé.'); return; }
+  if(src.reversalOf){ showToast('Une contre-passation ne se contre-passe pas.'); return; }
+  const motif=prompt('Contre-passer le reçu '+recuNum+' de '+FCFA(src.montant)+' F\n\nMotif (remboursement, erreur de saisie…) :','Erreur de saisie');
+  if(motif===null) return;
+  const today=new Date().toISOString().slice(0,10);
+  const date=isDateClosed(today) ? firstOpenDay() : today;
+  const num=uniqueReceiptId();
+  const rev={id:num, uid:newUid(), recuNum:num, invNum:src.invNum, client:{...src.client}, montant:-src.montant,
+    mode:src.mode, date, note:'Contre-passation du reçu '+recuNum+(motif?' — '+motif.trim():''),
+    reversalOf:src.recuNum, motif:(motif||'').trim(), createdAt:new Date().toISOString()};
+  src.reversedBy=num;
+  recus.push(rev);
+  saveJSON(STORAGE_KEY_RECUS,recus);
+  // la facture d'origine retrouve son encours
+  const docs=loadJSON(STORAGE_KEY_DOCS,[]);
+  const fac=docs.find(x=>x.invNum===src.invNum);
+  if(fac){
+    fac.montantEncaisse=Math.max(0,(fac.montantEncaisse||0)-src.montant);
+    const du=montantDu(fac);
+    fac.status = fac.status==='annulee' ? 'annulee'
+               : (fac.montantEncaisse>=du-0.5 ? 'payee' : (fac.montantEncaisse>0 ? 'partiel' : 'emise'));
+    saveJSON(STORAGE_KEY_DOCS,docs);
+    renderClasseur();
+  }
+  renderJournal();
+  showToast('↩️ Reçu '+recuNum+' contre-passé — '+FCFA(src.montant)+' F retirés des encaissements.');
 }
 
 function drawStamp(doc, cx, cy, mainText, subText, color){
@@ -2150,8 +2353,9 @@ function computeJournalOps(){
   let ops=[];
   recus.forEach(r=>{
     ops.push({date:r.date, type:'in', montant:r.montant, mode:r.mode,
-      libelle:'Règlement facture '+r.invNum+' — '+(r.client.name||'Client')+(r.note?' ('+r.note+')':''),
-      compte:OHADA_COMPTES.ventesServices, compteLbl:'Services vendus', createdAt:r.createdAt||r.date});
+      libelle:(r.montant<0?'Contre-passation — ':'Règlement facture ')+r.invNum+' — '+(r.client.name||'Client')+(r.note?' ('+r.note+')':''),
+      compte:OHADA_COMPTES.ventesServices, compteLbl:'Services vendus', createdAt:r.createdAt||r.date,
+      srcType:'recu', srcId:r.recuNum, num:r.recuNum, isReversal:!!r.reversalOf, reversed:!!r.reversedBy});
   });
   depenses.forEach(d=>{
     const hasSnap=d.catNameSnapshot!==undefined;
@@ -2160,7 +2364,8 @@ function computeJournalOps(){
     const compte=hasSnap?d.compte:catInfo(d.catId).compte;
     ops.push({date:d.date, type:'out', montant:d.montant, mode:d.mode,
       libelle:catIc+' '+catNm+(d.projet?' — '+d.projet:'')+(d.note?' ('+d.note+')':''),
-      compte:compte||'—', compteLbl:catNm, createdAt:d.createdAt||d.date});
+      compte:compte||'—', compteLbl:catNm, createdAt:d.createdAt||d.date,
+      srcType:'depense', srcId:d.id, num:d.num||'', isReversal:!!d.reversalOf, reversed:!!d.reversedBy});
   });
 
   // tri chronologique croissant (le plus ancien d'abord) pour calculer le solde qui roule correctement
@@ -2170,6 +2375,7 @@ function computeJournalOps(){
   return ops; // triées du plus ancien au plus récent, avec solde cumulé à jour sur chaque ligne
 }
 function renderJournal(){
+  renderCloture();
   const ops=computeJournalOps();
   const soldeActuel=ops.length ? ops[ops.length-1].solde : 0;
 
@@ -2225,12 +2431,19 @@ function renderJournal(){
   const rowsDesc=filtered.slice().reverse();
   body.innerHTML=rowsDesc.map(o=>{
     const dateStr=new Date(o.date+'T00:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'short',year:'numeric'});
-    return `<tr><td>${dateStr}</td>`+
+    const closed=isDateClosed(o.date);
+    const neg=o.montant<0;
+    const mnt = neg ? '('+FCFA(Math.abs(o.montant))+') F' : FCFA(o.montant)+' F';
+    const action = (o.isReversal||o.reversed)
+      ? '<span class="clot-tag">'+(o.isReversal?'contre-passation':'contre-passée')+'</span>'
+      : `<button class="ra-btn" onclick="${o.srcType==='recu'?'reverseRecu':'reverseExpense'}('${o.srcId}')" title="Corriger par écriture inverse">↩️ Contre-passer</button>`;
+    return `<tr><td>${dateStr}${o.num?`<br><small style="color:var(--gris-l)">${o.num}</small>`:''}${closed?' 🔒':''}</td>`+
       `<td><span class="badge ${o.type==='in'?'badge-in':'badge-out'}">${o.type==='in'?'⬆ Encaissement':'⬇ Décaissement'}</span></td>`+
-      `<td>${o.libelle}</td><td><small>cpt ${o.compte}</small></td><td>${modeLabels[o.mode]||o.mode}</td>`+
-      `<td class="row-in">${o.type==='in'?'+'+FCFA(o.montant)+' F':''}</td>`+
-      `<td class="row-out">${o.type==='out'?'−'+FCFA(o.montant)+' F':''}</td>`+
-      `<td class="row-solde">${FCFA(o.solde)} F</td></tr>`;
+      `<td${neg?' class="row-rev"':''}>${o.libelle}</td><td><small>cpt ${o.compte}</small></td><td>${modeLabels[o.mode]||o.mode}</td>`+
+      `<td class="row-in">${o.type==='in'?(neg?mnt:'+'+mnt):''}</td>`+
+      `<td class="row-out">${o.type==='out'?(neg?mnt:'−'+mnt):''}</td>`+
+      `<td class="row-solde">${FCFA(o.solde)} F</td>`+
+      `<td><div class="row-actions">${action}</div></td></tr>`;
   }).join('');
 }
 
@@ -2299,6 +2512,8 @@ function generateRapportPDF(){
   let y=18;
 
   function ensure(need){ if(y+need>281){ doc.addPage(); y=20; } }
+  // convention comptable : un montant négatif (contre-passation) s'écrit entre parenthèses
+  const mnt=(m,type)=>{ if(m<0) return '('+FCFA(Math.abs(m))+') F'; if(m===0) return '0 F'; return (type==='in'?'+':'-')+FCFA(m)+' F'; };
   function sectionHeading(text){
     ensure(14);
     doc.setTextColor(...V);doc.setFont('helvetica','bold');doc.setFontSize(10);
@@ -2314,7 +2529,13 @@ function generateRapportPDF(){
   doc.setTextColor(...V);doc.setFont('helvetica','bold');doc.setFontSize(18);
   doc.text('RAPPORT COMPTABLE',W-M,y+8,{align:'right'});
   doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(...GR);
-  const rapNum='RAP-'+now.getFullYear()+'-'+Date.now().toString(36).toUpperCase().slice(-5);
+  const rapYear=String(now.getFullYear());
+  const rapports=loadJSON(STORAGE_KEY_RAPPORTS,[]);
+  const rapSeq=rapports.reduce((m,r)=>{ const k=/^RAP-(\d{4})-(\d{4,})$/.exec(r.num||''); return (k&&k[1]===rapYear)?Math.max(m,+k[2]):m; },0)+1;
+  const rapNum='RAP-'+rapYear+'-'+String(rapSeq).padStart(4,'0');
+  rapports.push({num:rapNum, uid:newUid(), createdAt:new Date().toISOString(), periode:allTime?'tout':monthVal});
+  saveJSON(STORAGE_KEY_RAPPORTS,rapports);
+  const clot=getCloture();
   doc.text('N° '+rapNum,W-M,y+13.5,{align:'right'});
   y+=23;
   doc.setDrawColor(...O);doc.setLineWidth(1);doc.line(M,y,W-M,y);
@@ -2338,6 +2559,9 @@ function generateRapportPDF(){
   doc.text('Du '+periodStartStr,col2X,y+10.5);
   doc.text('Au '+periodEndStr,col2X,y+14.5);
   doc.text('Système Minimal de Trésorerie (SMT)',col2X,y+18.5);
+  doc.text(clot.lastClosed
+    ? 'Écritures clôturées jusqu\'au '+monthEnd(clot.lastClosed).toLocaleDateString('fr-FR',{day:'2-digit',month:'long',year:'numeric'})
+    : 'Aucune période clôturée à ce jour', col2X, y+22.5);
   y+=34;
 
   // ---- résumé exécutif ----
@@ -2345,8 +2569,8 @@ function generateRapportPDF(){
   const boxW=(W-2*M-9)/4;
   const boxes=[
     ['Solde d\'ouverture', FCFA(soldeOuverture)+' F', NR],
-    ['Encaissements', '+'+FCFA(totalIn)+' F', [46,125,50]],
-    ['Décaissements', '-'+FCFA(totalOut)+' F', [179,58,58]],
+    ['Encaissements', mnt(totalIn,'in'), [46,125,50]],
+    ['Décaissements', mnt(totalOut,'out'), [179,58,58]],
     ['Solde de clôture', FCFA(soldeCloture)+' F', V],
   ];
   boxes.forEach((b,i)=>{
@@ -2383,7 +2607,7 @@ function generateRapportPDF(){
     doc.setTextColor(...NR);
     doc.text(String(c.nb),M+142,y);
     doc.setFont('helvetica','bold');
-    doc.text((c.type==='in'?'+':'-')+FCFA(c.montant)+' F',W-M-3,y,{align:'right'});
+    doc.text(mnt(c.montant,c.type),W-M-3,y,{align:'right'});
     doc.setDrawColor(...LN);doc.setLineWidth(.25);doc.line(M,y+2,W-M,y+2);
     y+=6.5;
   });
@@ -2411,14 +2635,14 @@ function generateRapportPDF(){
       doc.text(stripEmoji(o.libelle),M+46,y,{maxWidth:90});
       doc.text(modeShort[o.mode]||o.mode,M+140,y);
       doc.setFont('helvetica','bold');doc.setTextColor(46,125,50);
-      doc.text('+'+FCFA(o.montant)+' F',W-M-3,y,{align:'right'});
+      doc.text(mnt(o.montant,'in'),W-M-3,y,{align:'right'});
       doc.setDrawColor(...LN);doc.setLineWidth(.2);doc.line(M,y+1.8,W-M,y+1.8);
       y+=6;
     });
     ensure(7);
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(46,125,50);
     doc.text('Total encaissements',M+3,y+1);
-    doc.text('+'+FCFA(totalIn)+' F',W-M-3,y+1,{align:'right'});
+    doc.text(mnt(totalIn,'in'),W-M-3,y+1,{align:'right'});
     y+=9;
   }
 
@@ -2444,14 +2668,14 @@ function generateRapportPDF(){
       doc.text(stripEmoji(o.libelle),M+46,y,{maxWidth:90});
       doc.text(modeShort[o.mode]||o.mode,M+140,y);
       doc.setFont('helvetica','bold');doc.setTextColor(179,58,58);
-      doc.text('-'+FCFA(o.montant)+' F',W-M-3,y,{align:'right'});
+      doc.text(mnt(o.montant,'out'),W-M-3,y,{align:'right'});
       doc.setDrawColor(...LN);doc.setLineWidth(.2);doc.line(M,y+1.8,W-M,y+1.8);
       y+=6;
     });
     ensure(7);
     doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(179,58,58);
     doc.text('Total décaissements',M+3,y+1);
-    doc.text('-'+FCFA(totalOut)+' F',W-M-3,y+1,{align:'right'});
+    doc.text(mnt(totalOut,'out'),W-M-3,y+1,{align:'right'});
     y+=9;
   }
 
@@ -2768,7 +2992,7 @@ function createAvoir(invNum){
      !confirm(invNum+' a déjà reçu '+FCFA(fac.montantEncaisse)+' F de paiement.\nL\'avoir annule la facture ; le remboursement ou la reprise de ce montant sur une nouvelle facture est à gérer à part. Continuer ?')) return;
   const num=nextDocNumber('avoir');
   const todayISO=new Date().toISOString().slice(0,10);
-  const av={id:num, invNum:num, docType:'avoir', status:'avoir', createdAt:new Date().toISOString(),
+  const av={id:num, uid:newUid(), invNum:num, docType:'avoir', status:'avoir', createdAt:new Date().toISOString(),
     issueDate:todayISO, invDate:todayISO, client:{...fac.client},
     typeName:'Avoir sur '+fac.invNum, gName:'', dName:'', qty:1,
     totalHT:(fac.totalHT!==undefined && fac.totalHT!==null) ? fac.totalHT : fac.total,
@@ -2982,6 +3206,74 @@ const TVA_RATE=0.18;
 function isTvaOn(){ const el=document.getElementById('tvaOn'); return !!el && el.checked; }
 function setTva(on){ const el=document.getElementById('tvaOn'); if(el) el.checked=!!on; calc(); }
 
+// ---- Répertoire des clients : reprise des coordonnées d'un client déjà facturé ----
+function clientDirectory(){
+  const map=new Map();
+  loadJSON(STORAGE_KEY_DOCS,[]).forEach(d=>{
+    const c=d.client||{};
+    const nm=(c.name||'').trim();
+    if(!nm || nm==='À définir') return;
+    const key=nm.toLowerCase();
+    const stamp=d.issueDate || d.invDate || (d.createdAt||'').slice(0,10) || '';
+    const prev=map.get(key);
+    // on garde la fiche la plus récente, mais on compte tous les documents du client
+    if(!prev){
+      map.set(key,{nm, tel:c.tel||'', addr:c.addr||'', ninea:c.ninea||'', country:c.country||'',
+        idType:c.idType||'', idValue:c.idValue||'', stamp, count:1});
+    } else {
+      prev.count++;
+      if(stamp>=prev.stamp){
+        Object.assign(prev,{nm, tel:c.tel||'', addr:c.addr||'', ninea:c.ninea||'', country:c.country||'',
+          idType:c.idType||'', idValue:c.idValue||'', stamp});
+      }
+    }
+  });
+  return [...map.values()].sort((a,b)=>a.nm.localeCompare(b.nm,'fr'));
+}
+function renderClientPicker(){
+  const sel=document.getElementById('clientPicker');
+  const wrap=document.getElementById('clientPickWrap');
+  if(!sel||!wrap) return;
+  const dir=clientDirectory();
+  window._clientDir=dir;
+  wrap.style.display = dir.length ? 'block' : 'none';
+  const current=sel.value;
+  sel.innerHTML='<option value="">👤 Nouveau client…</option>'+
+    dir.map((c,i)=>'<option value="'+i+'">'+escHtml(c.nm)+(c.count>1?' · '+c.count+' documents':'')+'</option>').join('');
+  if(current && dir[+current]) sel.value=current;
+  const dl=document.getElementById('clientsList');
+  if(dl) dl.innerHTML=dir.map(c=>'<option value="'+escHtml(c.nm)+'"></option>').join('');
+}
+function fillClientFields(c){
+  document.getElementById('cName').value=c.nm;
+  document.getElementById('cTel').value=c.tel||'';
+  document.getElementById('cAddr').value=c.addr||'';
+  document.getElementById('cNinea').value=c.ninea||'';
+  setClientIntl(c.country||'', c.idType||'', c.idValue||'');
+  calc();
+}
+function applyClientFromPicker(){
+  const sel=document.getElementById('clientPicker');
+  const c=(window._clientDir||[])[+sel.value];
+  if(!c) return;
+  fillClientFields(c);
+  showToast('👤 Coordonnées de '+c.nm+' reprises — '+c.count+' document'+(c.count>1?'s':'')+' à son nom.');
+}
+// saisie ou choix dans la liste déroulante du champ nom : on complète ce qui est encore vide
+function onClientNameInput(){
+  const val=(document.getElementById('cName').value||'').trim().toLowerCase();
+  if(!val) return;
+  const c=(window._clientDir||[]).find(x=>x.nm.toLowerCase()===val);
+  if(!c) return;
+  const setIfEmpty=(id,v)=>{ const el=document.getElementById(id); if(el && !el.value.trim() && v) el.value=v; };
+  setIfEmpty('cTel',c.tel); setIfEmpty('cAddr',c.addr); setIfEmpty('cNinea',c.ninea);
+  if((c.country||c.idValue) && !getClientIntl().on) setClientIntl(c.country||'', c.idType||'', c.idValue||'');
+  const sel=document.getElementById('clientPicker');
+  const idx=(window._clientDir||[]).indexOf(c);
+  if(sel && idx>=0) sel.value=String(idx);
+  calc();
+}
+
 // ---- Client international : pays + identifiant (SIRET, TVA intracom., etc.) ----
 function getClientIntl(){
   const box=document.getElementById('intlBox');
@@ -3170,6 +3462,7 @@ function exitEditMode(silent){
   updateEditBanner();
   regenNumber();
   setTva(false);
+  const pickEl=document.getElementById('clientPicker'); if(pickEl) pickEl.value='';
   if(!silent) showToast('🆕 Nouveau document — numérotation repartie à neuf.');
 }
 function applyDocToForm(rec){
@@ -3181,6 +3474,7 @@ function applyDocToForm(rec){
   document.getElementById('cAddr').value=rec.client.addr||'';
   document.getElementById('cNinea').value=rec.client.ninea||'';
   setClientIntl(rec.client.country||'', rec.client.idType||'', rec.client.idValue||'');
+  const pick=document.getElementById('clientPicker'); if(pick) pick.value='';
   if(rec.validDays) document.getElementById('validDays').value=rec.validDays;
   setDocType(rec.docType);
 }
@@ -3710,6 +4004,80 @@ const PENDING_QUEUE_KEY='bp_sync_pending_v1';
 let syncUserId=null, syncStarted=false, realtimeChannel=null;
 let syncPushTimers={};
 
+// ---------------------------------------------------------------
+// Synchronisation : fusion enregistrement par enregistrement.
+// Envoyer le tableau entier ferait perdre l'écriture saisie sur
+// l'autre appareil pendant le même intervalle (dernier arrivé gagne).
+// ---------------------------------------------------------------
+function recId(item){ return (item && (item.uid || item.id || item.invNum || item.recuNum || item.num)) || null; }
+function recStamp(item){ return (item && (item.updatedAt || item.createdAt || item.closedAt || item.date)) || ''; }
+function mergeTombstones(a,b){
+  const out={...(a||{})};
+  Object.entries(b||{}).forEach(([k,ids])=>{
+    out[k]={...(out[k]||{})};
+    Object.entries(ids||{}).forEach(([id,ts])=>{ if(!out[k][id] || out[k][id]<ts) out[k][id]=ts; });
+  });
+  return out;
+}
+function mergeLists(key, local, remote){
+  const dead=(getTombstones()[key])||{};
+  const byId=new Map(); let anon=0;
+  const add=item=>{
+    const id=recId(item);
+    if(!id){ byId.set('sans-id-'+(anon++), item); return; }
+    const prev=byId.get(id);
+    if(!prev || recStamp(item)>=recStamp(prev)) byId.set(id,item);
+  };
+  (Array.isArray(local)?local:[]).forEach(add);
+  (Array.isArray(remote)?remote:[]).forEach(add);
+  const out=[];
+  byId.forEach((item,id)=>{
+    const del=dead[id];
+    if(del && !(recStamp(item)>del)) return; // supprimé après sa dernière modification connue
+    out.push(item);
+  });
+  out.sort((a,b)=>String(recStamp(a)).localeCompare(String(recStamp(b))));
+  return out;
+}
+function mergeCloture(local,remote){
+  const l=local||{}, r=remote||{};
+  const seen=new Map();
+  [...(l.history||[]),...(r.history||[])].forEach(h=>{
+    const p=seen.get(h.month);
+    if(!p || String(h.closedAt||'')>String(p.closedAt||'')) seen.set(h.month,h);
+  });
+  const lastClosed=[l.lastClosed,r.lastClosed].filter(Boolean).sort().pop()||null; // la clôture la plus avancée l'emporte
+  return {lastClosed, history:[...seen.values()].sort((a,b)=>a.month.localeCompare(b.month))};
+}
+function mergeKey(key, local, remote){
+  if(key===STORAGE_KEY_DELETED) return mergeTombstones(local,remote);
+  if(key===STORAGE_KEY_CLOTURE) return mergeCloture(local,remote);
+  return mergeLists(key, local, remote);
+}
+function emptyFor(key){
+  if(key===STORAGE_KEY_DELETED) return {};
+  if(key===STORAGE_KEY_CLOTURE) return {lastClosed:null,history:[]};
+  return [];
+}
+// deux appareils hors ligne peuvent produire le même numéro : on ne réécrit rien,
+// on prévient pour que la régularisation soit faite à la main (avoir)
+function detectNumberConflicts(){
+  const dup=[];
+  const scan=(list,field)=>{
+    const seen=new Map();
+    (list||[]).forEach(x=>{
+      const v=x&&x[field]; if(!v) return;
+      const prev=seen.get(v);
+      if(prev && (prev.uid||prev.id)!==(x.uid||x.id)) dup.push(v);
+      else seen.set(v,x);
+    });
+  };
+  scan(loadJSON(STORAGE_KEY_DOCS,[]),'invNum');
+  scan(loadJSON(STORAGE_KEY_RECUS,[]),'recuNum');
+  scan(loadJSON(STORAGE_KEY_EXPENSES,[]),'num');
+  if(dup.length) showToast('⚠️ Numéro en double après synchronisation : '+[...new Set(dup)].join(', ')+' — à régulariser.');
+}
+
 function getPendingQueue(){ try{ return JSON.parse(localStorage.getItem(PENDING_QUEUE_KEY)||'[]'); }catch(e){ return []; } }
 function setPendingQueue(q){ localStorage.setItem(PENDING_QUEUE_KEY, JSON.stringify(q)); }
 function queuePending(key){ const q=getPendingQueue(); if(!q.includes(key)) q.push(key); setPendingQueue(q); }
@@ -3721,17 +4089,37 @@ function scheduleCloudPush(key){
   syncPushTimers[key]=setTimeout(()=>pushKeyToCloud(key), 500);
 }
 
-async function pushKeyToCloud(key){
+async function pushKeyToCloud(key, attempt){
   if(!sb || !syncUserId) return;
+  attempt=attempt||0;
   setSyncStatus('syncing');
-  const raw=localStorage.getItem(key);
-  const data=raw ? JSON.parse(raw) : [];
+  const local=loadJSON(key, emptyFor(key));
   try{
-    const {error}=await sb.from('kv_store').upsert(
-      {user_id:syncUserId, key, data, updated_at:new Date().toISOString()},
-      {onConflict:'user_id,key'}
-    );
-    if(error) throw error;
+    const {data:rows,error:selErr}=await sb.from('kv_store')
+      .select('data,updated_at').eq('user_id',syncUserId).eq('key',key).limit(1);
+    if(selErr) throw selErr;
+    const row=rows && rows[0];
+    const merged = row ? mergeKey(key, local, row.data) : local;
+    const now=new Date().toISOString();
+    if(row){
+      // n'écrase que si personne n'a écrit depuis notre lecture ; sinon on refait la fusion
+      const {data:upd,error}=await sb.from('kv_store')
+        .update({data:merged, updated_at:now})
+        .eq('user_id',syncUserId).eq('key',key).eq('updated_at',row.updated_at).select('key');
+      if(error) throw error;
+      if(!upd || !upd.length){
+        if(attempt<3) return pushKeyToCloud(key, attempt+1);
+        throw new Error('conflit de synchronisation persistant sur '+key);
+      }
+    } else {
+      const {error}=await sb.from('kv_store').insert({user_id:syncUserId, key, data:merged, updated_at:now});
+      if(error) throw error;
+    }
+    if(JSON.stringify(merged)!==JSON.stringify(local)){
+      localStorage.setItem(key, JSON.stringify(merged));
+      refreshActivePage();
+      detectNumberConflicts();
+    }
     unqueuePending(key);
     setSyncStatus('ok');
   }catch(e){
@@ -3751,10 +4139,22 @@ async function pullAllFromCloud(){
   try{
     const {data:rows,error}=await sb.from('kv_store').select('key,data').eq('user_id',syncUserId);
     if(error) throw error;
-    if(rows && rows.length){
-      rows.forEach(r=>localStorage.setItem(r.key, JSON.stringify(r.data)));
-      refreshActivePage();
+    const cloud=new Map((rows||[]).map(r=>[r.key,r.data]));
+    // les suppressions d'abord : elles conditionnent la fusion de toutes les autres clés
+    if(cloud.has(STORAGE_KEY_DELETED)){
+      localStorage.setItem(STORAGE_KEY_DELETED, JSON.stringify(mergeTombstones(getTombstones(), cloud.get(STORAGE_KEY_DELETED))));
     }
+    let changed=false;
+    for(const key of BACKUP_KEYS){
+      if(key===STORAGE_KEY_DELETED || !cloud.has(key)) continue;
+      const local=loadJSON(key, emptyFor(key));
+      const merged=mergeKey(key, local, cloud.get(key));
+      if(JSON.stringify(merged)!==JSON.stringify(local)){ localStorage.setItem(key, JSON.stringify(merged)); changed=true; }
+      // le cloud ignore encore certaines de nos écritures : on les lui renverra
+      if(JSON.stringify(merged)!==JSON.stringify(cloud.get(key))) queuePending(key);
+    }
+    if(changed) refreshActivePage();
+    detectNumberConflicts();
     setSyncStatus('ok');
   }catch(e){
     console.error('Pull cloud échoué',e);
@@ -3781,14 +4181,22 @@ function subscribeRealtime(){
   realtimeChannel=sb.channel('kv_store_changes_'+syncUserId)
     .on('postgres_changes',{event:'*',schema:'public',table:'kv_store',filter:`user_id=eq.${syncUserId}`},payload=>{
       const row = payload.eventType==='DELETE' ? payload.old : payload.new;
-      if(!row || !row.key) return;
-      localStorage.setItem(row.key, JSON.stringify(row.data));
-      refreshActivePage();
+      if(!row || !row.key || !BACKUP_KEYS.includes(row.key)) return;
+      const local=loadJSON(row.key, emptyFor(row.key));
+      const merged=mergeKey(row.key, local, row.data);
+      if(JSON.stringify(merged)!==JSON.stringify(local)){
+        localStorage.setItem(row.key, JSON.stringify(merged));
+        refreshActivePage();
+        detectNumberConflicts();
+      }
+      // notre version contient des écritures que l'autre appareil n'a pas : on les renvoie
+      if(JSON.stringify(merged)!==JSON.stringify(row.data)) scheduleCloudPush(row.key);
     })
     .subscribe();
 }
 
 function refreshActivePage(){
+  renderClientPicker();
   navBadge('classeurCount', loadJSON(STORAGE_KEY_DOCS,[]).length);
   navBadge('expCount', loadJSON(STORAGE_KEY_EXPENSES,[]).length);
   const activeEl=document.querySelector('.app-page.active');
@@ -4011,6 +4419,8 @@ async function initAuth(){
 // init
 function initApp(){
   renderPhases();
+  renderClientPicker();
+  document.getElementById('cName').addEventListener('input',onClientNameInput);
   pickType('airbnb');
   setDocType('devis');
   calc();
